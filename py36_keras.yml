@@ -1,0 +1,15 @@
+name: py36_keras
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  - python=3.6
+  - keras
+  - tensorflow
+  - matplotlib
+  - numpy
+  - scipy
+  - spyder
+  - ipdb
+  
