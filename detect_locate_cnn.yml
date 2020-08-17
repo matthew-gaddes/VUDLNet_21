@@ -1,0 +1,19 @@
+name: detect_locate_cnn
+channels:
+  - defaults
+  - conda-forge
+
+dependencies:
+  - python=3.6
+  - keras
+  - tensorflow
+  - numpy
+  - scipy
+  - spyder
+  - ipdb
+  - matplotlib=3.0                        # newer version can create issues with Basemap
+  - basemap-data-hires                    # needed to mask water bodies
+  - oct2py                                # To allow Octave to be used to run .m files.
+  - pip
+  - pip:
+    - wget                                # needed to download tiles
