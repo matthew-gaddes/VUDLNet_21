@@ -13,7 +13,6 @@ dependencies:
   - ipdb
   - matplotlib=3.0                        # newer version can create issues with Basemap
   - basemap-data-hires                    # needed to mask water bodies
-  - oct2py                                # To allow Octave to be used to run .m files.
   - pip
   - pip:
     - wget                                # needed to download tiles
