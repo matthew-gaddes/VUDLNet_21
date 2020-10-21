@@ -79,7 +79,7 @@ SRTM_dem_settings = {'SRTM1_or3'                : 'SRTM3',                      
 
 synthetic_ifgs_n_files  =  2                                                                      # we will generate this many files, each of n_ifgs (so, e.g. 2 files of 20 ifgs = 40 in total)
 synthetic_ifgs_folder   = '01_github_example'
-synthetic_ifgs_settings = {'defo_sources'           :  ['no_def', 'dyke', 'sill', 'mogi'],      # deformation patterns that will be included in the dataset.  
+synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def'],               # deformation patterns that will be included in the dataset.  
                            'n_ifgs'                 : 5,                                        # the number of synthetic interferograms to generate PER FILE
                            'n_pix'                  : 224,                                      # number of 3 arc second pixels (~90m) in x and y direction
                            'outputs'                : ['uuu', 'uud'],                           # channel outputs.  uuu = unwrapped across all 3
@@ -109,14 +109,14 @@ from random_generation_functions import create_random_synthetic_ifgs
 
 np.random.seed(0)                                                                                           # 0 used in the example
 
-volcanoes = open_smithsonian_csv_file('smithsonian_name_lat_lon.csv', side_length=SRTM_dem_settings['side_length'])
+volcanoes = open_smithsonian_csv_file('./step_01_dem_data/smithsonian_name_lat_lon.csv', side_length=SRTM_dem_settings['side_length'])
 
 print('Quick fix to shorten the number of volcanoes')
 volcanoes = volcanoes[:5]
 
 try:
     print('Trying to open a .pkl of the DEMs... ', end = '')
-    with open('volcano_dems.pkl', 'rb') as f:
+    with open('./step_01_dem_data/volcano_dems.pkl', 'rb') as f:
         volcano_dems = pickle.load(f)
     f.close()
     print('Done.  ')
@@ -125,8 +125,9 @@ except:
     print('Failed.  Generating them from scratch, which can be slow.  ')
     del SRTM_dem_settings['side_length']                                                                # this key is no longer needed, so delete.  
     volcano_dems = SRTM_dem_make_batch(volcanoes, **SRTM_dem_settings)                                  # make the DEMS
-    with open(f'volcano_dems.pkl', 'wb') as f:
+    with open(f'./step_01_dem_data/volcano_dems.pkl', 'wb') as f:
         pickle.dump(volcano_dems, f)
+    f.close()
     print('Saved the dems as a .pkl for future use.  ')
 
 
@@ -134,24 +135,24 @@ except:
 #%% 2: Create or load the synthetic interferograms.  
 
 print('Determining if files containing the synthetic deformation patterns exist... ', end = '')
-data_files = glob.glob(str(Path(f"./synthetic_data/{synthetic_ifgs_folder}/*.pkl")))             #
+data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}/*.pkl")))             #
 if len(data_files) == synthetic_ifgs_n_files:
     print(f"The correct number of files were found ({synthetic_ifgs_n_files}) so no new ones will be generated.  ")
 else:
     print(f"{len(data_files)} files were found, but {synthetic_ifgs_n_files} were requested.  "
-          f"The folder containing these (./synthetic_data/{synthetic_ifgs_folder})will be deleted, and the correct number of files generated.  ")
+          f"The folder containing these (./step_02_synthetic_data/{synthetic_ifgs_folder})will be deleted, and the correct number of files generated.  ")
     answer = input("Do you wish to continue ('y' or 'n')?")
     if answer == 'n':
         sys.exit()
     elif answer == 'y':
         try:
-            shutil.rmtree(str(Path(f"./synthetic_data/{synthetic_ifgs_folder}/")))
+            shutil.rmtree(str(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}/")))
         except:
             pass
-        os.mkdir(Path(f"./synthetic_data/{synthetic_ifgs_folder}"))
+        os.mkdir(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}"))
         for file_n in range(synthetic_ifgs_n_files):
             X_all, Y_class, Y_loc = create_random_synthetic_ifgs(volcano_dems, **synthetic_ifgs_settings)
-            with open(Path(f'./synthetic_data/{synthetic_ifgs_folder}/data_file_{file_n}.pkl'), 'wb') as f:
+            with open(Path(f'./step_02_synthetic_data/{synthetic_ifgs_folder}/data_file_{file_n}.pkl'), 'wb') as f:
                 pickle.dump(X_all, f)
                 pickle.dump(Y_class, f)
                 pickle.dump(Y_loc, f)
@@ -161,12 +162,108 @@ else:
         print(f"Answer ({answer}) was not understood as either 'y' or 'n' so exiting to err on the side of caution")
         sys.exit()
     
-        
-    
+     
+#%% 3: Load the real data (and augment).  Note that these are in metres.  
 
-import sys; sys.exit()
+
+with open('step_03_real_data/real_data_class_locs_subset.pkl', 'rb') as f:
+    X = pickle.load(f)
+    Y_class = pickle.load(f)
+    Y_loc = pickle.load(f)
+f.close()
+    
+from detect_locate_plotting_functions import plot_data_class_loc_caller
+
+plot_data_class_loc_caller(X, Y_class, Y_loc, source_names = ['dyke', 'sill', 'no def'])    
+
 #%%
 
+def choose_for_augmentation(X, Y_class, Y_loc, n_per_class):
+    """A function to randomly select some data for augmentation, whilst balancing the classes
+    Inputs:
+        n_per_class | int | number of data per class. e.g. 3
+    """
+    import numpy as np
+    from neural_network_functions import shuffle_arrays
+    
+    n_classes = Y_class.shape[1]
+    
+    X_sample = []
+    Y_class_sample = []
+    Y_loc_sample = []
+    
+    for i in range(n_classes):
+        args_class = np.ravel(np.argwhere(Y_class[:,i] != 0))                                       # get all the data of this label
+        
+        args_sample = args_class[np.random.randint(0, len(args_class), n_per_class)]
+        X_sample.append(X[args_sample, :,:,:])
+        Y_class_sample.append(Y_class[args_sample, :])
+        Y_loc_sample.append(Y_loc[args_sample, :])
+    
+    X_sample = np.vstack(X_sample)
+    Y_class_sample = np.vstack(Y_class_sample)
+    Y_loc_sample = np.vstack(Y_loc_sample)
+    
+    [X_sample, Y_class_sample, Y_loc_sample] = shuffle_arrays([X_sample, Y_class_sample, Y_loc_sample])
+    
+    return X_sample, Y_class_sample, Y_loc_sample
+
+
+
+#% Things to set
+
+augmentation_output = '/nfs/a1/homes/eemeg/2_neural_networks_python/3_python_defo_atm_data/02_augmented_real_data'
+train_data_folder = '/nfs/a1/homes/eemeg/2_neural_networks_python/06_real_data'
+
+source_names = ['dyke', 'sill', 'no def.']            
+n_outfiles = 40
+
+#% Open the npz of training data
+
+npz_arrays = np.load(f'{train_data_folder}/training_data.npz')
+#npz_arrays = np.load(f'{train_data_folder}/training_data_small.npz')
+X_train = npz_arrays['X']
+Y_class_train = npz_arrays['Y_class']
+Y_loc_train = npz_arrays['Y_loc']
+
+#% Choose a subset to be augmented that represents the samples evenly
+# at this point data are in correct range, mean centered, and masked bits are 0
+
+X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X_train, Y_class_train, Y_loc_train, 3)
+
+plot_data_class_loc_caller(X_sample, classes=Y_class_sample, locs=Y_loc_sample, source_names = source_names)    
+
+
+#% do data augmentation
+
+for out_file_num in range(n_outfiles):
+    print(f'File {out_file_num}...', end = '')
+    X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X_train, Y_class_train, Y_loc_train, 3)
+    X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample)
+
+    np.savez(f'{augmentation_output}/uuu/data_file_{out_file_num}.npz', X = X_aug, Y_class= Y_class_aug, Y_loc = Y_loc_aug)                            #, source_names = source_names)  
+
+    print('Done!')
+
+#plot_data_class_loc_caller(X_aug, classes=Y_class_aug, locs=Y_loc_aug, source_names = source_names)
+
+
+
+
+
+
+#%% 
+
+#%% 4: Rescale and merge the data
+
+
+#%% 5: Compute bottlenecks
+
+#%% 6: Train a model.  
+
+#%%
+
+import sys; sys.exit()
 
 #     with open('volcano_dems.pkl', 'rb') as f:
 #         volcano_dems = pickle.load(f)
