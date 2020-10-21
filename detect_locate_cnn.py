@@ -59,6 +59,10 @@ def open_smithsonian_csv_file(smithsonian_csv_file, side_length = 40e3):
 import numpy as np
 import pickle
 import sys
+import glob
+import os
+from pathlib import Path
+import shutil
 
 
 #%% 0: Things to set
@@ -73,11 +77,13 @@ SRTM_dem_settings = {'SRTM1_or3'                : 'SRTM3',                      
                      'void_fill'                : True,                                         # some tiles contain voids which can be filled (slow)
                      'side_length'              : 40e3}                                         # the side length in metres of the DEM.  To allow for different crops of this, it should be somewhat bigger than 224 (the number of pixels) x 90 (pixel size) ~ 20e3
 
+synthetic_ifgs_n_files  =  2                                                                      # we will generate this many files, each of n_ifgs (so, e.g. 2 files of 20 ifgs = 40 in total)
+synthetic_ifgs_folder   = '01_github_example'
 synthetic_ifgs_settings = {'defo_sources'           :  ['no_def', 'dyke', 'sill', 'mogi'],      # deformation patterns that will be included in the dataset.  
-                           'n_ifgs'                 : 20,                                       # the number of synthetic interferograms to generate
+                           'n_ifgs'                 : 5,                                        # the number of synthetic interferograms to generate PER FILE
                            'n_pix'                  : 224,                                      # number of 3 arc second pixels (~90m) in x and y direction
-                           'outputs'                : ['uuu'],                                  # channel outputs.  uuu = unwrapped across all 3
-                           'intermediate_figure'    : True,                                     # if True, a figure showing the steps taken during creation of each ifg is displayed.  
+                           'outputs'                : ['uuu', 'uud'],                           # channel outputs.  uuu = unwrapped across all 3
+                           'intermediate_figure'    : False,                                    # if True, a figure showing the steps taken during creation of each ifg is displayed.  
                            'coh_scale'              : 5000,                                     # The length scale of the incoherent areas, in meters.  A smaller value creates smaller patches, and a larger one creates larger pathces.  
                            'coh_threshold'          : 0.7,                                      # if 1, there are no areas of incoherence, if 0 all of ifg is incoherent.  
                            'min_deformation'        : 0.05,                                     # deformation pattern must have a signals of at least this many metres.  
@@ -86,6 +92,8 @@ synthetic_ifgs_settings = {'defo_sources'           :  ['no_def', 'dyke', 'sill'
                            'turb_aps_mean'          : 0.02,                                     # turbulent APS will have, on average, a maximum strenghto this in metres (e.g 0.02 = 2cm)
                            'turb_aps_length'        : 5000}                                     # turbulent APS will be correlated on this length scale, in metres.  
                            
+
+
 
               
 #%% Import dependencies (paths set above)
@@ -97,7 +105,7 @@ from dem_tools_lib import SRTM_dem_make_batch
 from random_generation_functions import create_random_synthetic_ifgs
 
 
-#%% 1: Create a list of locations (in this case subaerial volcanoes) to make interferograms for, and make them.  
+#%% 1: Create or load DEMs for the volcanoes to be used for synthetic data.  
 
 np.random.seed(0)                                                                                           # 0 used in the example
 
@@ -121,17 +129,75 @@ except:
         pickle.dump(volcano_dems, f)
     print('Saved the dems as a .pkl for future use.  ')
 
-import sys; sys.exit()
 
-#%% 2: Create the synthetic interferograms
+
+#%% 2: Create or load the synthetic interferograms.  
+
+print('Determining if files containing the synthetic deformation patterns exist... ', end = '')
+data_files = glob.glob(str(Path(f"./synthetic_data/{synthetic_ifgs_folder}/*.pkl")))             #
+if len(data_files) == synthetic_ifgs_n_files:
+    print(f"The correct number of files were found ({synthetic_ifgs_n_files}) so no new ones will be generated.  ")
+else:
+    print(f"{len(data_files)} files were found, but {synthetic_ifgs_n_files} were requested.  "
+          f"The folder containing these (./synthetic_data/{synthetic_ifgs_folder})will be deleted, and the correct number of files generated.  ")
+    answer = input("Do you wish to continue ('y' or 'n')?")
+    if answer == 'n':
+        sys.exit()
+    elif answer == 'y':
+        try:
+            shutil.rmtree(str(Path(f"./synthetic_data/{synthetic_ifgs_folder}/")))
+        except:
+            pass
+        os.mkdir(Path(f"./synthetic_data/{synthetic_ifgs_folder}"))
+        for file_n in range(synthetic_ifgs_n_files):
+            X_all, Y_class, Y_loc = create_random_synthetic_ifgs(volcano_dems, **synthetic_ifgs_settings)
+            with open(Path(f'./synthetic_data/{synthetic_ifgs_folder}/data_file_{file_n}.pkl'), 'wb') as f:
+                pickle.dump(X_all, f)
+                pickle.dump(Y_class, f)
+                pickle.dump(Y_loc, f)
+            f.close()
+            del X_all, Y_class, Y_loc
+    else:
+        print(f"Answer ({answer}) was not understood as either 'y' or 'n' so exiting to err on the side of caution")
+        sys.exit()
+    
         
-X_all, Y_class, Y_loc = create_random_synthetic_ifgs(volcano_dems2, **synthetic_ifgs_settings)
+    
 
+import sys; sys.exit()
+#%%
+
+
+#     with open('volcano_dems.pkl', 'rb') as f:
+#         volcano_dems = pickle.load(f)
+#     f.close()
+#     print('Done.  ')
+
+# except:
+#     print('Failed.  Generating them from scratch, which can be slow.  ')
+#     del SRTM_dem_settings['side_length']                                                                # this key is no longer needed, so delete.  
+#     volcano_dems = SRTM_dem_make_batch(volcanoes, **SRTM_dem_settings)                                  # make the DEMS
+#     with open(f'volcano_dems.pkl', 'wb') as f:
+#         pickle.dump(volcano_dems, f)
+        
+#     #also save the dict of settings as a text file
+        
+#     print('Saved the dems as a .pkl for future use.  ')
+
+
+        
+
+#%%
+
+input("press enter to continue...")
+
+print("continuing")
 
 
 
 
 ############################################################################
+
 
 #%% Things to set
 
