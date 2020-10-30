@@ -12,7 +12,8 @@ dependencies:
   - spyder
   - ipdb
   - matplotlib=3.0                        # newer version can create issues with Basemap
-  - basemap-data-hires                    # needed to mask water bodies
+  - basemap-data-hires                    # needed by SRTM-DEM-tools
+  - geopy                                 # needed by SyInterferoPy and SRTM-DEM-tools
   - pip
   - pip:
     - wget                                # needed to download tiles

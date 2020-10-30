@@ -26,6 +26,7 @@ Dependencies:
 # predict model
 
 @author: matthew
+
 """
 
 
@@ -63,6 +64,7 @@ import glob
 import os
 from pathlib import Path
 import shutil
+import keras
 
 
 #%% 0: Things to set
@@ -77,12 +79,13 @@ SRTM_dem_settings = {'SRTM1_or3'                : 'SRTM3',                      
                      'void_fill'                : True,                                         # some tiles contain voids which can be filled (slow)
                      'side_length'              : 40e3}                                         # the side length in metres of the DEM.  To allow for different crops of this, it should be somewhat bigger than 224 (the number of pixels) x 90 (pixel size) ~ 20e3
 
-synthetic_ifgs_n_files  =  2                                                                      # we will generate this many files, each of n_ifgs (so, e.g. 2 files of 20 ifgs = 40 in total)
+ifg_settings            = {'n_per_file'         : 10}                                            # number of ifgs per data file.  
+synthetic_ifgs_n_files  =  6                                                                    # numer of files of synthetic data
 synthetic_ifgs_folder   = '01_github_example'
 synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def'],               # deformation patterns that will be included in the dataset.  
-                           'n_ifgs'                 : 5,                                        # the number of synthetic interferograms to generate PER FILE
+                           'n_ifgs'                 : ifg_settings['n_per_file'],               # the number of synthetic interferograms to generate PER FILE
                            'n_pix'                  : 224,                                      # number of 3 arc second pixels (~90m) in x and y direction
-                           'outputs'                : ['uuu', 'uud'],                           # channel outputs.  uuu = unwrapped across all 3
+                           'outputs'                : ['uuu'],                                  # channel outputs.  uuu = unwrapped across all 3
                            'intermediate_figure'    : False,                                    # if True, a figure showing the steps taken during creation of each ifg is displayed.  
                            'coh_scale'              : 5000,                                     # The length scale of the incoherent areas, in meters.  A smaller value creates smaller patches, and a larger one creates larger pathces.  
                            'coh_threshold'          : 0.7,                                      # if 1, there are no areas of incoherence, if 0 all of ifg is incoherent.  
@@ -91,7 +94,10 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
                            'snr_threshold'          : 2.0,                                      # signal to noise ratio (deformation vs turbulent and topo APS) to ensure that deformation is visible.  A lower value creates more subtle deformation signals.
                            'turb_aps_mean'          : 0.02,                                     # turbulent APS will have, on average, a maximum strenghto this in metres (e.g 0.02 = 2cm)
                            'turb_aps_length'        : 5000}                                     # turbulent APS will be correlated on this length scale, in metres.  
+
+real_ifg_settings       = {'augmentation_factor' : 2}                                           # factor to agument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
                            
+
 
 
 
@@ -101,11 +107,14 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
 sys.path.append(dependency_paths['syinterferopy_bin'])
 sys.path.append(dependency_paths['srtm_dem_tools_bin'])
 
-from dem_tools_lib import SRTM_dem_make_batch
-from random_generation_functions import create_random_synthetic_ifgs
+from dem_tools_lib import SRTM_dem_make_batch                                       # From SRTM dem tools
+from random_generation_functions import create_random_synthetic_ifgs                # From SyInterferoPy
+from detect_locate_plotting_functions import plot_data_class_loc_caller, open_pkl_and_plot             # from this repo
+from detect_locate_nn_functions import augment_data, choose_for_augmentation                      # from this repo
 
 
 #%% 1: Create or load DEMs for the volcanoes to be used for synthetic data.  
+print("\nStep 01: Creating or loadings DEMs")
 
 np.random.seed(0)                                                                                           # 0 used in the example
 
@@ -133,6 +142,9 @@ except:
 
 
 #%% 2: Create or load the synthetic interferograms.  
+print("\nStep 02: Creating or loading synthetic interferograms")
+
+n_synth_data = ifg_settings['n_per_file'] * synthetic_ifgs_n_files
 
 print('Determining if files containing the synthetic deformation patterns exist... ', end = '')
 data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}/*.pkl")))             #
@@ -151,9 +163,10 @@ else:
             pass
         os.mkdir(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}"))
         for file_n in range(synthetic_ifgs_n_files):
-            X_all, Y_class, Y_loc = create_random_synthetic_ifgs(volcano_dems, **synthetic_ifgs_settings)
+            X_all, Y_class, Y_loc, Y_source_kwargs = create_random_synthetic_ifgs(volcano_dems, **synthetic_ifgs_settings)
+            Y_class = keras.utils.to_categorical(Y_class, len(synthetic_ifgs_settings['defo_sources']), dtype='float32')          # convert to one hot encoding (from class labels)
             with open(Path(f'./step_02_synthetic_data/{synthetic_ifgs_folder}/data_file_{file_n}.pkl'), 'wb') as f:
-                pickle.dump(X_all, f)
+                pickle.dump(X_all[synthetic_ifgs_settings['outputs'][0]], f)                                                    # usual output style is many channel formats in a dict, but we are only interesetd in the one we generated.  
                 pickle.dump(Y_class, f)
                 pickle.dump(Y_loc, f)
             f.close()
@@ -161,53 +174,197 @@ else:
     else:
         print(f"Answer ({answer}) was not understood as either 'y' or 'n' so exiting to err on the side of caution")
         sys.exit()
-    
+
+
+open_pkl_and_plot(f"step_02_synthetic_data/{synthetic_ifgs_folder}/data_file_0.pkl", n_data = 15, window_title ='Sample of synthetic data')                                        # open and plot the data in 1 file
+
      
-#%% 3: Load the real data (and augment).  Note that these are in metres.  
+#%% 3: Load the real data (and augment).  Note that these are in metres, and use one hot encoding for the class, and are masked arrays (incoherence and water are masked)
+print("\nStep 03: Loading and augmenting the real interferograms.  ")
+
+with open("step_03_real_data/real_data_class_locs_subset.pkl", 'rb') as f:                                                      # open the real data file
+    X = pickle.load(f)                                                                                                          # this is a masked array
+    Y_class = pickle.load(f)                                                                                                    # numpy array
+    Y_loc = pickle.load(f)                                                                                                      # numpy array
+f.close()    
+plot_data_class_loc_caller(X, Y_class, Y_loc, source_names = ['dyke', 'sill', 'no def'], window_title = 'Real data')            # plot the data in it
+
+#print('Commented out the augmentation as a quick fix.  ')
+print(f"Starting to augment the real data...")
+n_augmented_files = int((X.shape[0] * real_ifg_settings['augmentation_factor']) / ifg_settings['n_per_file'])                   # get the number of real data, multiply by the augmentation factor, find how many files will be required as n data per file
+for n_augmented_file in range(n_augmented_files):                                                                               # loop through each file that is to be made
+    print(f'    File {n_augmented_file} of {n_augmented_files}...', end = '')  
+    X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X, Y_class, Y_loc, ifg_settings['n_per_file'])             # chose a subset of the data, and balance the classes.  
+    X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample, ifg_settings['n_per_file'])            # do the augmentation
+
+    with open(f"./step_03_real_data/augmented/data_file_{n_augmented_file}.pkl", 'wb') as f:                                    # save the output as a pickle
+        pickle.dump(X_aug, f)
+        pickle.dump(Y_class_aug, f)
+        pickle.dump(Y_loc_aug, f)
+    f.close()
+    print('Done!')
+print('Done!')
+
+open_pkl_and_plot("./step_03_real_data/augmented/data_file_0.pkl", n_data = 15, window_title = 'Sample of augmented real data')
+
+import sys; sys.exit()
+
+#%% 4: Merge real and synthetic data, and rescale to desired range (e.g. [0, 1], [0, 255], [-125, 125] etc)
 
 
-with open('step_03_real_data/real_data_class_locs_subset.pkl', 'rb') as f:
-    X = pickle.load(f)
-    Y_class = pickle.load(f)
-    Y_loc = pickle.load(f)
-f.close()
-    
-from detect_locate_plotting_functions import plot_data_class_loc_caller
 
-plot_data_class_loc_caller(X, Y_class, Y_loc, source_names = ['dyke', 'sill', 'no def'])    
+
+def merge_and_rescale_data(synthetic_data_files, real_data_files, custom_range):
+    """ 
+    Inputs:
+        synthetic_data_files | list of Paths or string | locations of the .pkl files containing the masked arrays
+        reak_data_files      | list of Paths or string | locations of the .pkl files containing the masked arrays
+        custom_range         | ?
+    Returns:
+        .npz files in step_04_merged_rescaled_data
+    History:
+        2020_10_29 | MEG | Written
+        
+        
+    """
+    from detect_locate_nn_functions import custom_range_for_CNN
+    import numpy.ma as ma
+
+    if len(synthetic_data_files) != len(real_data_files):
+        raise Exception('This funtion is only designed to be used when the number of real and synthetic data files are the same.  Exiting.  ')
+
+    n_files = len(synthetic_data_files)        
+    out_file = 0
+    for n_file in range(n_files):
+        print(f'Opening and merging file {n_file} of each type... ', end = '')
+        with open(real_data_files[n_file], 'rb') as f:                                                      # open the real data file
+            X_real = pickle.load(f)
+            Y_class_real = pickle.load(f)
+            Y_loc_real = pickle.load(f)
+        f.close()    
+        
+        with open(synthetic_data_files[n_file], 'rb') as f:                                                      # open the synthetic data file
+            X_synth = pickle.load(f)
+            Y_class_synth = pickle.load(f)
+            Y_loc_synth = pickle.load(f)
+        f.close()    
+
+        X = ma.concatenate((X_real, X_synth), axis = 0)                                                             # concatenate them
+        Y_class = ma.concatenate((Y_class_real, Y_class_synth), axis = 0)
+        Y_loc = ma.concatenate((Y_loc_real, Y_loc_synth), axis = 0)
+        
+        mix_index = np.arange(0, X.shape[0])                                                        # mix them, get a lis of arguments for each data 
+        np.random.shuffle(mix_index)                                                                # shuffle the arguments
+        X = X[mix_index,]                                                                           # reorder the data using the shuffled arguments
+        Y_class = Y_class[mix_index]                                                                # reorder the class labels
+        Y_loc = Y_loc[mix_index]                                                                    # and the location labels
+
+
+                
+        
+        def data_channel_checker(X, n_cols = 7, window_title = None):
+            """
+            """
+            import matplotlib.pyplot as plt        
+            f, axes = plt.subplots(3,n_cols)
+            if window_title is not None:
+                f.canvas.set_window_title(window_title)
+            for plot_n, im_n in enumerate(np.random.randint(0, X.shape[0], n_cols)):
+                axes[0, plot_n].set_title(f"Data: {im_n}")
+                for channel_n in range(3):
+                    axes[channel_n, plot_n].imshow(X[im_n, :,:,channel_n])
+                
+                
+        
+        data_channel_checker(X)
+        data_channel_checker(X_real, window_title = 'X_real')
+        data_channel_checker(X_synth, window_title = 'X_synth')
+        
+        import sys; sys.exit()
+        
+        X_rescale = custom_range_for_CNN(X, custom_range, mean_centre = False)                      # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255])
+        
+        data_mid = int(X_rescale.shape[0] / 2)
+        
+        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])                            #, source_names = source_names)  
+        out_file += 1                                                                                                                                                           # after saving once, update
+        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])                            #, source_names = source_names)  
+        out_file += 1                                                                                                                                                       # and after saving again, update
+        
+
+
+synthetic_data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}/*.pkl")))             #
+real_data_files = glob.glob(str(Path(f"./step_03_real_data/augmented//*.pkl")))             #
+
+merge_and_rescale_data(synthetic_data_files, real_data_files, [255])
+
 
 #%%
 
-def choose_for_augmentation(X, Y_class, Y_loc, n_per_class):
-    """A function to randomly select some data for augmentation, whilst balancing the classes
-    Inputs:
-        n_per_class | int | number of data per class. e.g. 3
-    """
-    import numpy as np
-    from neural_network_functions import shuffle_arrays
-    
-    n_classes = Y_class.shape[1]
-    
-    X_sample = []
-    Y_class_sample = []
-    Y_loc_sample = []
-    
-    for i in range(n_classes):
-        args_class = np.ravel(np.argwhere(Y_class[:,i] != 0))                                       # get all the data of this label
-        
-        args_sample = args_class[np.random.randint(0, len(args_class), n_per_class)]
-        X_sample.append(X[args_sample, :,:,:])
-        Y_class_sample.append(Y_class[args_sample, :])
-        Y_loc_sample.append(Y_loc[args_sample, :])
-    
-    X_sample = np.vstack(X_sample)
-    Y_class_sample = np.vstack(Y_class_sample)
-    Y_loc_sample = np.vstack(Y_loc_sample)
-    
-    [X_sample, Y_class_sample, Y_loc_sample] = shuffle_arrays([X_sample, Y_class_sample, Y_loc_sample])
-    
-    return X_sample, Y_class_sample, Y_loc_sample
 
+import sys; sys.exit()
+
+
+
+real_files =  glob.glob(f'{real_data_folder}/*npz')
+synthetic_files = glob.glob(f'{synthetic_data_folder}/*npz')
+
+print(f'There are {len(real_files)} files of real data and {len(synthetic_files)} files of synthetic data')
+
+
+n_files = len(real_files)
+
+out_file = 0
+for n_file in range(n_files):
+#for n_file in range(2):
+    print(f'Opening and merging file {n_file} of each type... ', end = '')
+    # open the real data
+    data = np.load(real_files[n_file])
+    X_real = data['X']
+    Y_class_real = data['Y_class']                                      # should be one hot
+    Y_loc_real = data['Y_loc']
+    
+    # open the synthetic data
+    data = np.load(synthetic_files[n_file])
+    X_synth = data['X']
+    Y_class_synth = data['Y_class']                                     # also should be one hot
+    Y_loc_synth = data['Y_loc']
+    
+    
+    # concatenate them
+    X = np.concatenate((X_real, X_synth), axis = 0)
+    Y_class = np.concatenate((Y_class_real, Y_class_synth), axis = 0)
+    Y_loc = np.concatenate((Y_loc_real, Y_loc_synth), axis = 0)
+    
+    # mix them 
+    mix_index = np.arange(0, X.shape[0])
+    np.random.shuffle(mix_index)
+    X = X[mix_index,]
+    Y_class = Y_class[mix_index]
+    Y_loc = Y_loc[mix_index]
+    
+    
+    # figure output to check things look right
+    #plot_data_class_loc_caller(X[:60], classes=Y_class[:60], locs=Y_loc[:60], source_names = source_names)    
+    
+    #import sys; sys.exit()
+    
+    # save as two files
+    np.savez(f'{output_folder}/data/data_file_{out_file}.npz', X = X[:500,:,:,:], Y_class= Y_class[:500,:], Y_loc = Y_loc[:500,:])                            #, source_names = source_names)  
+    out_file += 1
+    np.savez(f'{output_folder}/data/data_file_{out_file}.npz', X = X[500:,:,:,:], Y_class= Y_class[500:,:], Y_loc = Y_loc[500:,:])                            #, source_names = source_names)  
+    out_file += 1
+    
+    print('Done.')
+
+
+
+
+
+
+#%%
+
+import sys; sys.exit()
 
 
 #% Things to set
