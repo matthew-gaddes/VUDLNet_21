@@ -65,6 +65,7 @@ import os
 from pathlib import Path
 import shutil
 import keras
+from keras.applications.vgg16 import VGG16
 
 
 #%% 0: Things to set
@@ -217,69 +218,39 @@ synthetic_data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_
 real_data_files = glob.glob(str(Path(f"./step_03_real_data/augmented//*.pkl")))             #
 merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['input_range'])
 
+#%% 5: Compute bottlenceck features
+
+print("\nStep 05: Computing the bottleneck features.")
+vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))
+
+data_out_files = glob.glob(f'step_04_merged_rescaled_data/*.npz')           # get the files outputted by part 1
+
+for file_n, data_out_file in enumerate(data_out_files):
+    print(f'Bottlneck file {file_n}:')
+    
+    data_out_file = Path(data_out_file)                                               # convert to path object
+    bottleneck_file_name = data_out_file.parts[-1].split('.')[0]                      # and get last part which is filename
+    
+    data = np.load(data_out_file)
+    X = data['X']
+    Y_class = data['Y_class']
+    Y_loc = data['Y_loc']
+    
+    X_btln = vgg16_block_1to5.predict(X, verbose = 1)                                             # predict up to bottleneck    
+    
+    np.savez(f'step_05_bottleneck/{bottleneck_file_name}_bottleneck.npz', X = X_btln, Y_class = Y_class, Y_loc = Y_loc)                            #, source_names = source_names)  
 
 
 
-#%% 5
-
+#%%
 
 import sys; sys.exit()
 
 
-
-real_files =  glob.glob(f'{real_data_folder}/*npz')
-synthetic_files = glob.glob(f'{synthetic_data_folder}/*npz')
-
-print(f'There are {len(real_files)} files of real data and {len(synthetic_files)} files of synthetic data')
+#%% 6: Train the CNN
 
 
-n_files = len(real_files)
-
-out_file = 0
-for n_file in range(n_files):
-#for n_file in range(2):
-    print(f'Opening and merging file {n_file} of each type... ', end = '')
-    # open the real data
-    data = np.load(real_files[n_file])
-    X_real = data['X']
-    Y_class_real = data['Y_class']                                      # should be one hot
-    Y_loc_real = data['Y_loc']
-    
-    # open the synthetic data
-    data = np.load(synthetic_files[n_file])
-    X_synth = data['X']
-    Y_class_synth = data['Y_class']                                     # also should be one hot
-    Y_loc_synth = data['Y_loc']
-    
-    
-    # concatenate them
-    X = np.concatenate((X_real, X_synth), axis = 0)
-    Y_class = np.concatenate((Y_class_real, Y_class_synth), axis = 0)
-    Y_loc = np.concatenate((Y_loc_real, Y_loc_synth), axis = 0)
-    
-    # mix them 
-    mix_index = np.arange(0, X.shape[0])
-    np.random.shuffle(mix_index)
-    X = X[mix_index,]
-    Y_class = Y_class[mix_index]
-    Y_loc = Y_loc[mix_index]
-    
-    
-    # figure output to check things look right
-    #plot_data_class_loc_caller(X[:60], classes=Y_class[:60], locs=Y_loc[:60], source_names = source_names)    
-    
-    #import sys; sys.exit()
-    
-    # save as two files
-    np.savez(f'{output_folder}/data/data_file_{out_file}.npz', X = X[:500,:,:,:], Y_class= Y_class[:500,:], Y_loc = Y_loc[:500,:])                            #, source_names = source_names)  
-    out_file += 1
-    np.savez(f'{output_folder}/data/data_file_{out_file}.npz', X = X[500:,:,:,:], Y_class= Y_class[500:,:], Y_loc = Y_loc[500:,:])                            #, source_names = source_names)  
-    out_file += 1
-    
-    print('Done.')
-
-
-
+#%% 7: Evaluate the CNN
 
 
 
