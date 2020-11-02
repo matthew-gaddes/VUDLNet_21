@@ -98,7 +98,7 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
 real_ifg_settings       = {'augmentation_factor' : 2}                                           # factor to agument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
                            
 
-
+cnn_settings = {'input_range' : {'min':0, 'max':255}}
 
 
               
@@ -109,8 +109,8 @@ sys.path.append(dependency_paths['srtm_dem_tools_bin'])
 
 from dem_tools_lib import SRTM_dem_make_batch                                       # From SRTM dem tools
 from random_generation_functions import create_random_synthetic_ifgs                # From SyInterferoPy
-from detect_locate_plotting_functions import plot_data_class_loc_caller, open_pkl_and_plot             # from this repo
-from detect_locate_nn_functions import augment_data, choose_for_augmentation                      # from this repo
+from detect_locate_plotting_functions import plot_data_class_loc_caller, open_pkl_and_plot                                # from this repo
+from detect_locate_nn_functions import augment_data, choose_for_augmentation, merge_and_rescale_data                      # from this repo
 
 
 #%% 1: Create or load DEMs for the volcanoes to be used for synthetic data.  
@@ -189,117 +189,38 @@ with open("step_03_real_data/real_data_class_locs_subset.pkl", 'rb') as f:      
 f.close()    
 plot_data_class_loc_caller(X, Y_class, Y_loc, source_names = ['dyke', 'sill', 'no def'], window_title = 'Real data')            # plot the data in it
 
-#print('Commented out the augmentation as a quick fix.  ')
-print(f"Starting to augment the real data...")
-n_augmented_files = int((X.shape[0] * real_ifg_settings['augmentation_factor']) / ifg_settings['n_per_file'])                   # get the number of real data, multiply by the augmentation factor, find how many files will be required as n data per file
-for n_augmented_file in range(n_augmented_files):                                                                               # loop through each file that is to be made
-    print(f'    File {n_augmented_file} of {n_augmented_files}...', end = '')  
-    X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X, Y_class, Y_loc, ifg_settings['n_per_file'])             # chose a subset of the data, and balance the classes.  
-    X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample, ifg_settings['n_per_file'])            # do the augmentation
+print('Commented out the augmentation as a quick fix.  ')
+# print(f"Starting to augment the real data...")
+# n_augmented_files = int((X.shape[0] * real_ifg_settings['augmentation_factor']) / ifg_settings['n_per_file'])                   # get the number of real data, multiply by the augmentation factor, find how many files will be required as n data per file
+# for n_augmented_file in range(n_augmented_files):                                                                               # loop through each file that is to be made
+#     print(f'    File {n_augmented_file} of {n_augmented_files}...', end = '')  
+#     X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X, Y_class, Y_loc, ifg_settings['n_per_file'])             # chose a subset of the data, and balance the classes.  
+#     X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample, ifg_settings['n_per_file'])            # do the augmentation
 
-    with open(f"./step_03_real_data/augmented/data_file_{n_augmented_file}.pkl", 'wb') as f:                                    # save the output as a pickle
-        pickle.dump(X_aug, f)
-        pickle.dump(Y_class_aug, f)
-        pickle.dump(Y_loc_aug, f)
-    f.close()
-    print('Done!')
-print('Done!')
+#     with open(f"./step_03_real_data/augmented/data_file_{n_augmented_file}.pkl", 'wb') as f:                                    # save the output as a pickle
+#         pickle.dump(X_aug, f)
+#         pickle.dump(Y_class_aug, f)
+#         pickle.dump(Y_loc_aug, f)
+#     f.close()
+#     print('Done!')
+# print('Done!')
 
 open_pkl_and_plot("./step_03_real_data/augmented/data_file_0.pkl", n_data = 15, window_title = 'Sample of augmented real data')
 
-import sys; sys.exit()
+
 
 #%% 4: Merge real and synthetic data, and rescale to desired range (e.g. [0, 1], [0, 255], [-125, 125] etc)
 
-
-
-
-def merge_and_rescale_data(synthetic_data_files, real_data_files, custom_range):
-    """ 
-    Inputs:
-        synthetic_data_files | list of Paths or string | locations of the .pkl files containing the masked arrays
-        reak_data_files      | list of Paths or string | locations of the .pkl files containing the masked arrays
-        custom_range         | ?
-    Returns:
-        .npz files in step_04_merged_rescaled_data
-    History:
-        2020_10_29 | MEG | Written
-        
-        
-    """
-    from detect_locate_nn_functions import custom_range_for_CNN
-    import numpy.ma as ma
-
-    if len(synthetic_data_files) != len(real_data_files):
-        raise Exception('This funtion is only designed to be used when the number of real and synthetic data files are the same.  Exiting.  ')
-
-    n_files = len(synthetic_data_files)        
-    out_file = 0
-    for n_file in range(n_files):
-        print(f'Opening and merging file {n_file} of each type... ', end = '')
-        with open(real_data_files[n_file], 'rb') as f:                                                      # open the real data file
-            X_real = pickle.load(f)
-            Y_class_real = pickle.load(f)
-            Y_loc_real = pickle.load(f)
-        f.close()    
-        
-        with open(synthetic_data_files[n_file], 'rb') as f:                                                      # open the synthetic data file
-            X_synth = pickle.load(f)
-            Y_class_synth = pickle.load(f)
-            Y_loc_synth = pickle.load(f)
-        f.close()    
-
-        X = ma.concatenate((X_real, X_synth), axis = 0)                                                             # concatenate them
-        Y_class = ma.concatenate((Y_class_real, Y_class_synth), axis = 0)
-        Y_loc = ma.concatenate((Y_loc_real, Y_loc_synth), axis = 0)
-        
-        mix_index = np.arange(0, X.shape[0])                                                        # mix them, get a lis of arguments for each data 
-        np.random.shuffle(mix_index)                                                                # shuffle the arguments
-        X = X[mix_index,]                                                                           # reorder the data using the shuffled arguments
-        Y_class = Y_class[mix_index]                                                                # reorder the class labels
-        Y_loc = Y_loc[mix_index]                                                                    # and the location labels
-
-
-                
-        
-        def data_channel_checker(X, n_cols = 7, window_title = None):
-            """
-            """
-            import matplotlib.pyplot as plt        
-            f, axes = plt.subplots(3,n_cols)
-            if window_title is not None:
-                f.canvas.set_window_title(window_title)
-            for plot_n, im_n in enumerate(np.random.randint(0, X.shape[0], n_cols)):
-                axes[0, plot_n].set_title(f"Data: {im_n}")
-                for channel_n in range(3):
-                    axes[channel_n, plot_n].imshow(X[im_n, :,:,channel_n])
-                
-                
-        
-        data_channel_checker(X)
-        data_channel_checker(X_real, window_title = 'X_real')
-        data_channel_checker(X_synth, window_title = 'X_synth')
-        
-        import sys; sys.exit()
-        
-        X_rescale = custom_range_for_CNN(X, custom_range, mean_centre = False)                      # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255])
-        
-        data_mid = int(X_rescale.shape[0] / 2)
-        
-        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])                            #, source_names = source_names)  
-        out_file += 1                                                                                                                                                           # after saving once, update
-        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])                            #, source_names = source_names)  
-        out_file += 1                                                                                                                                                       # and after saving again, update
-        
-
+print("\nStep 04: Mergring the real and synthetic interferograms and rescaling to CNNs input range.")
 
 synthetic_data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}/*.pkl")))             #
 real_data_files = glob.glob(str(Path(f"./step_03_real_data/augmented//*.pkl")))             #
+merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['input_range'])
 
-merge_and_rescale_data(synthetic_data_files, real_data_files, [255])
 
 
-#%%
+
+#%% 5
 
 
 import sys; sys.exit()
