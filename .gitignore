@@ -1,2 +1,4 @@
 step_03_real_data/real_data_class_locs.pkl
+step_06_train_fully_connected_model/vgg16_2head_fc.h5
+step_07_train_full_model/01_vgg16_2head_block5_trained.h5
 __pycache__/

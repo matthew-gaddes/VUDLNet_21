@@ -8,8 +8,63 @@ Created on Wed Oct 21 11:47:45 2020
 
 #%%
 
-def open_pkl_and_plot(pkl_path, n_data = 15, rad_to_m_convert = False,
-                      window_title = None):
+def custom_training_history(metrics, n_epochs, title = None):
+    """Plot training line graphs for loss and accuracy.  Loss on the left, accuracy on the right.  
+    Inputs
+        metrics | r2 array | (n_files * n_epochs) x 2 or 4 matrix,  train loss|validate loss | train accuracy|validate accuracy.  If no accuracy, only 2 columns
+        n_epochs | int | number of epochs model was trained for
+        title | string | title
+    Returns:
+        Figure
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    
+    if metrics.shape[1] == 4:           # detemrine if we have accuracy as well as loss
+        accuracy_flag = True
+    else:
+        accuracy_flag = False
+        
+    
+    n_files = metrics.shape[0] / n_epochs
+    # Figure output
+    fig1, axes = plt.subplots(1,2)
+    fig1.canvas.set_window_title(title)
+    fig1.suptitle(title)
+    xvals = np.arange(0,metrics.shape[0])
+    validation_plot = np.ravel(np.argwhere(metrics[:,1] > 1e-10))                   # fewer validation data; find which ones to plot
+    
+    axes[0].plot(xvals, metrics[:,0], c = 'k')                                       # training loss
+    axes[0].plot(xvals[validation_plot], metrics[validation_plot,1], c = 'r')        # validation loss
+    axes[0].set_ylabel('Loss')
+    axes[0].legend(['train', 'validate'], loc='upper left')
+    axes[0].axhline(y=0, color='k', alpha=0.5)
+    
+    if accuracy_flag:
+        axes[1].plot(xvals, metrics[:,2], c = 'k')                                       # training accuracy
+        axes[1].plot(xvals[validation_plot], metrics[validation_plot,3], c = 'r')        # validation accuracy
+        axes[1].set_ylim([0,1])
+        axes[1].set_ylabel('Accuracy')
+        axes[1].yaxis.tick_right()
+        axes[1].legend(['train', 'validate'], loc='upper right')
+        
+    #
+    titles = ['Training loss', 'Training accuracy']
+    for i in range(2):
+        axes[i].set_title(titles[i])
+        axes[i].set_xticks(np.arange(0,metrics.shape[0],2*n_files))                 # change so a tick only after each epoch (and not each file)
+        axes[i].set_xticklabels(np.arange(0,n_epochs, 2))                                  # number ticks
+        axes[i].set_xlabel('Epoch number')
+
+    if not accuracy_flag:
+        axes[1].set_visible(False)
+
+
+
+#%%
+
+def open_datafile_and_plot(file_path, n_data = 15, rad_to_m_convert = False,
+                           window_title = None):
     """ A function to open a .pkl file of ifgs and quickly plot the first n_data ifgs.  
     Inputs:
         pkl_path | path or string | path to pkl file to be opened
@@ -20,6 +75,7 @@ def open_pkl_and_plot(pkl_path, n_data = 15, rad_to_m_convert = False,
         figure
     History:
         2020/10/28 | MEG | Written
+        2020/11/11 | MEG | Update to handle either .pkl or .npz
     """
     import pickle
     import numpy as np
@@ -27,11 +83,19 @@ def open_pkl_and_plot(pkl_path, n_data = 15, rad_to_m_convert = False,
     
     s1_wav = 0.055465763                                                                            # in metres
     
-    with open(pkl_path, 'rb') as f:                                              # the subset hosted in the github repo.  
-        X = pickle.load(f)
-        Y_class = pickle.load(f)
-        Y_loc = pickle.load(f)
-    f.close()
+    if file_path.split('.')[-1] == 'pkl':                                                   # if it's a .pkl
+        with open(file_path, 'rb') as f:                                                    # open the file
+            X = pickle.load(f)                                                              # and extract data (X) and labels (Y)
+            Y_class = pickle.load(f)
+            Y_loc = pickle.load(f)
+        f.close()
+    elif file_path.split('.')[-1] == 'npz':                                                 # if it's a npz
+        data = np.load(file_path)                                                           # load it
+        X = data['X']                                                                       # and extract data (X) and labels (Y)
+        Y_class = data['Y_class']
+        Y_loc = data['Y_loc']
+    else:                                                                                   # no other file types are currently supported
+        raise Exception(f"Error!  File was not understood as either a .pkl or a .npz so exiting.  ")
     
     if type(X) is dict:
         print('The variable X contained in this dictionary is dictionary, which usually means it contains the same data stored in various formats.  '

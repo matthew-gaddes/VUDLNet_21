@@ -65,7 +65,9 @@ import os
 from pathlib import Path
 import shutil
 import keras
+from keras import backend as K
 from keras.applications.vgg16 import VGG16
+from keras.utils.vis_utils import plot_model
 
 
 #%% 0: Things to set
@@ -97,9 +99,28 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
                            'turb_aps_length'        : 5000}                                     # turbulent APS will be correlated on this length scale, in metres.  
 
 real_ifg_settings       = {'augmentation_factor' : 2}                                           # factor to agument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
-                           
 
-cnn_settings = {'input_range' : {'min':0, 'max':255}}
+
+cnn_settings = {'input_range'       : {'min':0, 'max':255},
+                'n_files_train'     : 8,
+                'n_files_validate'  : 2,
+                'n_files_test'      : 2 }                           
+
+
+
+n_files_train = 36
+n_files_validate = 2
+n_files_test = 2
+n_epochs_fc = 10
+fc_loss_weights = [0.05, 0.95]
+verbose_block5 = False
+n_epochs_block5 = 2
+block5_loss_weights = [0.05, 0.95]
+block5_lr = 1.5e-8                                                            
+# data_files_path = '/nfs/a1/homes/eemeg/02_neural_networks_python/3_python_defo_atm_data/01_final_synthetic_data/uuu_r1_1'      # Used in thesis in spring 2019
+data_files_path = '/nfs/a1/homes/eemeg/02_neural_networks_python/03_python_defo_atm_data/01a_final_synthetic_data_v2/uuu_r1_1'        # updated version used in Autumn 2019
+source_names = ['dyke', 'sill', 'no deformation']            
+laptop = False
 
 
               
@@ -110,8 +131,8 @@ sys.path.append(dependency_paths['srtm_dem_tools_bin'])
 
 from dem_tools_lib import SRTM_dem_make_batch                                       # From SRTM dem tools
 from random_generation_functions import create_random_synthetic_ifgs                # From SyInterferoPy
-from detect_locate_plotting_functions import plot_data_class_loc_caller, open_pkl_and_plot                                # from this repo
-from detect_locate_nn_functions import augment_data, choose_for_augmentation, merge_and_rescale_data                      # from this repo
+from detect_locate_plotting_functions import plot_data_class_loc_caller, open_datafile_and_plot                                # from this repo
+from detect_locate_nn_functions import augment_data, choose_for_augmentation, merge_and_rescale_data, file_list_divider                      # from this repo
 
 
 #%% 1: Create or load DEMs for the volcanoes to be used for synthetic data.  
@@ -177,7 +198,7 @@ else:
         sys.exit()
 
 
-open_pkl_and_plot(f"step_02_synthetic_data/{synthetic_ifgs_folder}/data_file_0.pkl", n_data = 15, window_title ='Sample of synthetic data')                                        # open and plot the data in 1 file
+open_datafile_and_plot(f"step_02_synthetic_data/{synthetic_ifgs_folder}/data_file_0.pkl", n_data = 15, window_title ='01 Sample of synthetic data')                                        # open and plot the data in 1 file
 
      
 #%% 3: Load the real data (and augment).  Note that these are in metres, and use one hot encoding for the class, and are masked arrays (incoherence and water are masked)
@@ -206,7 +227,7 @@ print('Commented out the augmentation as a quick fix.  ')
 #     print('Done!')
 # print('Done!')
 
-open_pkl_and_plot("./step_03_real_data/augmented/data_file_0.pkl", n_data = 15, window_title = 'Sample of augmented real data')
+open_datafile_and_plot("./step_03_real_data/augmented/data_file_0.pkl", n_data = 15, window_title = '02 Sample of augmented real data')
 
 
 
@@ -218,437 +239,175 @@ synthetic_data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_
 real_data_files = glob.glob(str(Path(f"./step_03_real_data/augmented//*.pkl")))             #
 merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['input_range'])
 
+open_datafile_and_plot("./step_04_merged_rescaled_data/data_file_0.npz", n_data = 15, window_title = ' 03 Sample of merged and rescaled data')
+
 #%% 5: Compute bottlenceck features
 
 print("\nStep 05: Computing the bottleneck features.")
-vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))
-
-data_out_files = glob.glob(f'step_04_merged_rescaled_data/*.npz')           # get the files outputted by part 1
-
-for file_n, data_out_file in enumerate(data_out_files):
-    print(f'Bottlneck file {file_n}:')
-    
-    data_out_file = Path(data_out_file)                                               # convert to path object
-    bottleneck_file_name = data_out_file.parts[-1].split('.')[0]                      # and get last part which is filename
-    
-    data = np.load(data_out_file)
-    X = data['X']
-    Y_class = data['Y_class']
-    Y_loc = data['Y_loc']
-    
-    X_btln = vgg16_block_1to5.predict(X, verbose = 1)                                             # predict up to bottleneck    
-    
-    np.savez(f'step_05_bottleneck/{bottleneck_file_name}_bottleneck.npz', X = X_btln, Y_class = Y_class, Y_loc = Y_loc)                            #, source_names = source_names)  
-
-
-
-#%%
-
-import sys; sys.exit()
-
-
-#%% 6: Train the CNN
-
-
-#%% 7: Evaluate the CNN
-
-
-
-#%%
-
-import sys; sys.exit()
-
-
-#% Things to set
-
-augmentation_output = '/nfs/a1/homes/eemeg/2_neural_networks_python/3_python_defo_atm_data/02_augmented_real_data'
-train_data_folder = '/nfs/a1/homes/eemeg/2_neural_networks_python/06_real_data'
-
-source_names = ['dyke', 'sill', 'no def.']            
-n_outfiles = 40
-
-#% Open the npz of training data
-
-npz_arrays = np.load(f'{train_data_folder}/training_data.npz')
-#npz_arrays = np.load(f'{train_data_folder}/training_data_small.npz')
-X_train = npz_arrays['X']
-Y_class_train = npz_arrays['Y_class']
-Y_loc_train = npz_arrays['Y_loc']
-
-#% Choose a subset to be augmented that represents the samples evenly
-# at this point data are in correct range, mean centered, and masked bits are 0
-
-X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X_train, Y_class_train, Y_loc_train, 3)
-
-plot_data_class_loc_caller(X_sample, classes=Y_class_sample, locs=Y_loc_sample, source_names = source_names)    
-
-
-#% do data augmentation
-
-for out_file_num in range(n_outfiles):
-    print(f'File {out_file_num}...', end = '')
-    X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X_train, Y_class_train, Y_loc_train, 3)
-    X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample)
-
-    np.savez(f'{augmentation_output}/uuu/data_file_{out_file_num}.npz', X = X_aug, Y_class= Y_class_aug, Y_loc = Y_loc_aug)                            #, source_names = source_names)  
-
-    print('Done!')
-
-#plot_data_class_loc_caller(X_aug, classes=Y_class_aug, locs=Y_loc_aug, source_names = source_names)
-
-
-
-
-
-
-#%% 
-
-#%% 4: Rescale and merge the data
-
-
-#%% 5: Compute bottlenecks
-
-#%% 6: Train a model.  
-
-#%%
-
-import sys; sys.exit()
-
-#     with open('volcano_dems.pkl', 'rb') as f:
-#         volcano_dems = pickle.load(f)
-#     f.close()
-#     print('Done.  ')
-
-# except:
-#     print('Failed.  Generating them from scratch, which can be slow.  ')
-#     del SRTM_dem_settings['side_length']                                                                # this key is no longer needed, so delete.  
-#     volcano_dems = SRTM_dem_make_batch(volcanoes, **SRTM_dem_settings)                                  # make the DEMS
-#     with open(f'volcano_dems.pkl', 'wb') as f:
-#         pickle.dump(volcano_dems, f)
-        
-#     #also save the dict of settings as a text file
-        
-#     print('Saved the dems as a .pkl for future use.  ')
-
-
-        
-
-#%%
-
-input("press enter to continue...")
-
-print("continuing")
-
-
-
-
-############################################################################
-
-
-#%% Things to set
-
-# General settings
-threshold_m = 0.015                  # deformation above this level will be included in the localization box
-snr_visible = 5.0                    # SNR of deformation signal over noise (topo. correlated and turbulent APS) required to ifg to be classsed as usable.  
-
-defo_fraction = 0.8                     # this fraction of the deformation above the threshold must be on land (i.e. checked using the DEM)
-turb_aps_mean = 2.5                        # max size of turbulent APS in cm
-topo_aps_mean = 56.0                    # rad/km of delay for each sar acquisition 
-topo_aps_var = 8.                       # rad/km variance for each sar acquisition
-
-
-
-
-padding = 10
-
-
-#pix_in_m = 92.6                    # pixels in m.  92.6m for a SRTM3 pixel on equator
-
-
-dem_settings = {'volcano_csv_file' : '/home/matthew/university_work/02_neural_networks_python/Detect-Locate-CNN/smithsonian_name_lat_lon.csv',
-                'srtm_tiles_folder' : '/home/matthew/university_work/data/SRTM/SRTM_3_tiles/',
-                'void_fill' : True,
-                'download' : True,
-                'width_km' : 30,
-                'water_mask_resolution' : 'f'}                      # c(rude), l(ow), i(termediate), h(igh), f(ull)
-
-
-synth_data_settings = {'n_files' : 2,
-                       'n_per_file' : 5,
-                       'n_classes' : 4,                                          # no def, inflation, dyke mogi would be 4
-                       'min_deformation' : 0.02,                                 # deformation of at least X m is required
-                       'max_deformation' : 0.25,                                 # but deformation must not be larger than X m
-                       'n_pix' : 224}                                           # number of pixels of square outputs
-    
-
-
-
-
-
-#%% Imports
-
-import numpy as np
-import numpy.ma as ma
-import matplotlib.pyplot as plt
-
-import pickle
-import os
-import sys
-
-
-sys.path.append(dependency_paths['syinterferopy_bin'])
-sys.path.append(dependency_paths['srtm_dem_tools_bin'])
-
-#from aux_functions import create_random_defo_m, def_and_dem_translate, check_def_visible, normalise_m1_1
-from syinterferopy_functions import coherence_mask, atmosphere_topo, atmosphere_turb
-
-print('Temporary import of matrix_show for debugging.  ')
-sys.path.append('/home/matthew/university_work/python_stuff/python_scripts/')
-from small_plot_functions import matrix_show
-
-
-#%% 01 Create of load dems for each volcano.  
-
-
-
-
-
-
-import sys; sys.exit()
-
-
-
-#%%
-print("Trying to open a .pkl of volcano dems... ", end = '')
-try:
-    with open('volcano_dems.pkl', 'rb') as f:
-        volcanoes = pickle.load(f)
-    f.close()
-    print('Success!')
-except:
-    print('Failed.  Starting to make these (~2 minutes per volcano = 8 hours)...', end = '')
-    volcanoes = create_volcano_dems(**dem_settings)                                                 # open all subaerial volcanoes and make DEMS for them.  
-    with open(f'volcano_dems.pkl', 'wb') as f:
-        pickle.dump(volcanoes, f)
-    f.close()
-    print('Done!')
-
-dem_settings['ny'], dem_settings['nx'] = volcanoes[0]['dem'].shape
-
-def open_volcano_csv_file(volcano_csv_file):
-    """ Conver the csv file to Python variables.  
+print('commented for speed')
+# vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))
+
+# data_out_files = glob.glob(f'step_04_merged_rescaled_data/*.npz')           # get the files outputted by part 1
+
+# for file_n, data_out_file in enumerate(data_out_files):
+#     print(f'Bottlneck file {file_n}:')    
+#     data_out_file = Path(data_out_file)                                               # convert to path object
+#     bottleneck_file_name = data_out_file.parts[-1].split('.')[0]                      # and get last part which is filename    
+#     data = np.load(data_out_file)
+#     X = data['X']
+#     Y_class = data['Y_class']
+#     Y_loc = data['Y_loc']
+#     X_btln = vgg16_block_1to5.predict(X, verbose = 1)                                             # predict up to bottleneck    
+#     np.savez(f'step_05_bottleneck/{bottleneck_file_name}_bottleneck.npz', X = X_btln, Y_class = Y_class, Y_loc = Y_loc)                            #, source_names = source_names)  
+
+
+#%% 6: Train the fully connected part of the CNN
+
+def define_two_head_model(model_input):
+    """ Define the two headed model that we have designed to performed classification of localisation.  
     Inputs:
-        volcano_csv_file | string | path to volcano csv file
+        model_input | tensorflow.python.framework.ops.Tensor | The shape of the tensor that will be input to our model.  Usually the output of VGG16 (?x7x7x512)  Nb ? = batch size.  
     Returns:
-        volcanoes | list | one entry for each volcano, each entry is a dictionary of info about that volcano (name string and lonlat tuple)
+        output_class |tensorflow.python.framework.ops.Tensor | The shape of the tensor output by the classifiction head.  Usually ?x3
+        output_loc | tensorflow.python.framework.ops.Tensor | The shape of the tensor output by the localisation head.  Usually ?x4
     History:
-        2020/07/29 | MEG | Written    
+        2020_11_11 | MEG | Written
     """
-    import csv  
-    with open(volcano_csv_file, 'r', encoding = "ISO-8859-1") as f:                             # open the csv file
-      reader = csv.reader(f)
-      volc_list = list(reader)                                          # list where each item is a row of the file?
-    volcanoes = []
-    for volc in volc_list:
-        volc_dict = {}
-        volc_dict['name'] = volc[0]
-        volc_dict['lonlat'] = (float(volc[2]), float(volc[1]))
-        volcanoes.append(volc_dict)
-    return volcanoes
-
-#%%
-
-
-
-
-#%% 03 Create synthetic interferograms using DEMS (units are metres at this point)
-
-
-"""
-Structure ideas:
-    for file in files:
-        generate n_in_file (create_random_synthetic_ifgs)           
-        save n_in_file
-"""
-                                                 
-
-
-import sys; sys.exit()
+    from keras.layers import Dense, Dropout, Flatten
     
-
-#%%
-
-
     
-#%%
+    vgg16_block_1to5_flat = Flatten(name = 'vgg16_block_1to5_flat')(model_input)                                                             # flatten the previous tensor
+
+    # 1: the clasification head
+    x = Dropout(0.2, name='class_dropout1')(vgg16_block_1to5_flat)
+    x = Dense(256, activation='relu', name='class_dense1')(x)                                                 # add a fully connected layer
+    x = Dropout(0.2, name='class_dropout2')(x)
+    x = Dense(128, activation='relu', name='class_dense2')(x)                                                 # add a fully connected layer
+    output_class = Dense(len(source_names), activation='softmax',  name = 'class_dense3')(x)                                      # and an ouput layer with 7 outputs (ie one per label)
     
-volcanoes = volcanoes
-out_folder = './test'
-outputs = ['uuu', 'uud']
-n_files = synth_data_settings['n_files']
-n_ifgs = synth_data_settings['n_ifgs']
-n_pix = synth_data_settings['n_pix']
-n_classes = synth_data_settings['n_classes']
-intermediate_figure = True
+    # 2: the localization head
 
-from aux_functions import combine_signals
-
-
-os.makedirs(out_folder)
-for output_extension in outputs:                                               # loop through them
-    os.makedirs(f"{out_folder}/{output_extension}")                                  # making them
-
-
-for out_file_num in range(n_files):
-
+    x = Dense(2048, activation='relu', name='loc_dense1')(vgg16_block_1to5_flat)                                                 # add a fully connected layer
+    x = Dense(1024, activation='relu', name='loc_dense2')(x)                                                 # add a fully connected layer
+    x = Dense(1024, activation='relu', name='loc_dense3')(x)                                                 # add a fully connected layer
+    x = Dropout(0.2, name='loc_dropout1')(x)
+    x = Dense(512, activation='relu', name='loc_dense4')(x)                                                 # add a fully connected layer
+    x = Dense(128, activation='relu', name='loc_dense5')(x)                                                 # add a fully connected layer
+    output_loc = Dense(4, name='loc_dense6')(x)        
     
-    import sys; sys.exit()
-    save_signals(X_all, Y_class, Y_loc)
-
-#%%
-            
-        
-    #     dem = ma.array(dem, mask=mask_coh_water)                                                # mask dem - water and also incoherent bits.  Suppose we don't need to mask incoherent bits, but done to make consistent.  
-        
-    
-    #     # 1b: Check that still visible over noise (topo APS and turb APS)
-        
-
-            
-    #     # 2: combine signals
-    #     if viable_location and viable_snr:
-    #         print(f"| Viable combination found ({count} attempts).  ")
-    #         if np.random.rand() < (1/ synth_data_settings['n_classes']):                                                        # a certain fraction of the signals shouldn't contain deformation.  
-    #             ph_all = ((4*np.pi)/s1_wav)*(APS_topo_m + APS_turb_m)                                                           # comnbine the signals in m, then convert to rads
-    #             Y_class[succesful_generate,0] = 0                                                                               # label as no deformation
-    #             Y_loc[succesful_generate,:] = np.array([0,0,0,0])                                                               # 0 0 0 0 for no deformaiton
-    #         else:
-    #             ph_all = ((4*np.pi)/s1_wav) * (APS_topo_m + APS_turb_m + defo_m)                                                 # combine the signals in m, then convert to rads.  Here we include deformation.  
-    #             Y_class[succesful_generate,0] = defo_source_n                                                                    # write the label as a number
-    #             Y_loc[succesful_generate,:] = np.array([loc_list[0][0],loc_list[0][1],loc_list[1][0],loc_list[1][1]])            # location of deformation 
-            
-
-    #         ph_all_wrap = (ph_all + np.pi) % (2 * np.pi ) - np.pi                       # wrap
-    #         #1 Genreate SAR amplitude 
-    #         look_az = heading - 90     
-    #         look_in = 90 - incidence                                                 # 
-    #         ls = LightSource(azdeg=look_az, altdeg=look_in)
-    #         sar_amplitude = normalise_m1_1(ls.hillshade(dem))                                                                   # in range [-1 1]
-            
-    #         # make real and imaginary
-    #         ifg_real = sar_amplitude * np.cos(ph_all_wrap)
-    #         ifg_imaginary = sar_amplitude * np.sin(ph_all_wrap)
-    #         ifg_real = ifg_real + sar_speckle_strength * np.random.randn(ifg_real.shape[0], ifg_real.shape[1])                 # add noise to real
-    #         ifg_imaginary = ifg_imaginary + sar_speckle_strength * np.random.randn(ifg_real.shape[0], ifg_real.shape[1])         # and imaginary
-
-    #         # make things rank 4
-    #         ph_all = ma.expand_dims(ma.expand_dims(ph_all, axis = 0), axis = 3)
-    #         dem = ma.expand_dims(ma.expand_dims(dem, axis = 0), axis = 3)
-    #         ifg_real = ma.expand_dims(ma.expand_dims(ifg_real, axis = 0), axis = 3)
-    #         ifg_imaginary = ma.expand_dims(ma.expand_dims(ifg_imaginary, axis = 0), axis = 3)
-    #         ph_all_wrap = ma.expand_dims(ma.expand_dims(ph_all_wrap, axis = 0), axis = 3)
-            
-
-    #         X_1s = []                                                                                   # this list will store one visualisation of 3 channel data in each form (uuu, uud, rid, www, wwwd)
-    #         X_1s.append(ma.concatenate((ph_all, ph_all, ph_all), axis = 3))                             # uuu
-    #         X_1s.append(ma.concatenate((ph_all, ph_all, dem), axis = 3))                                # uud
-    #         X_1s.append(ma.concatenate((ifg_real, ifg_imaginary, dem), axis = 3))                       # rid                                                                                     X_1s.append(ma.concatenate((ph_all_wrap, ph_all_wrap, ph_all_wrap), axis = 3))              # www
-    #         X_1s.append(ma.concatenate((ph_all_wrap, ph_all_wrap, dem), axis = 3))                      #wwd
-            
-    #         nans_present_flag = 0                                                           #check if any have nans in them.  
-    #         for X_1 in X_1s:
-    #             nans_present_current = np.max(np.ravel(np.isnan(X_1s)).astype(int))          # nans flag as an int
-    #             if nans_present_current == 1:
-    #                 nans_present_flag = 1                                                   # if there are nans, set the flag to 1
-    #             else:
-    #                 pass                                                                    # if no nans, don't update the flag (leave at 1 if already encountered nans)
-    #         nans_present_flag = bool(nans_present_flag)                              # convert from int to boolean
-                    
-    #         if nans_present_flag:
-    #             pass                                                                    # do nothing and start te loop over if we have nans
-    #         else:
-    #             for i in range(len(X_1s)):
-    #                 X_all[i][succesful_generate,: :, :] = X_1s[i]
-    #             succesful_generate += 1
-    #             print(f"Generated {succesful_generate} of {n_per_file} synthetic interferograms.  ")
-    #     else:
-            
-   
-    # # step back to loop through each file, not each ifg.   save what is required, not the most elegant way of doing this.  
-    # if 'uuu' in outputs:
-    #     with open(f'{out_folder}uuu/data_file_{out_file_num}.pkl', 'wb') as f:
-    #         pickle.dump(X_all[0], f)
-    #         pickle.dump(Y_class, f)
-    #         pickle.dump(Y_loc, f)
-
-    # if 'uud' in outputs:
-    #     with open(f'{out_folder}uud/data_file_{out_file_num}.pkl', 'wb') as f:
-    #         pickle.dump(X_all[1], f)
-    #         pickle.dump(Y_class, f)
-    #         pickle.dump(Y_loc, f)
-            
-    # if 'rid' in outputs:
-    #     with open(f'{out_folder}rid/data_file_{out_file_num}.pkl', 'wb') as f:
-    #         pickle.dump(X_all[2], f)
-    #         pickle.dump(Y_class, f)
-    #         pickle.dump(Y_loc, f)
-
-    # if 'www' in outputs:
-    #     with open(f'{out_folder}www/data_file_{out_file_num}.pkl', 'wb') as f:
-    #         pickle.dump(X_all[3], f)
-    #         pickle.dump(Y_class, f)
-    #         pickle.dump(Y_loc, f)
-            
-    # if 'wwd' in outputs:
-    #     with open(f'{out_folder}wwd/data_file_{out_file_num}.pkl', 'wb') as f:
-    #         pickle.dump(X_all[4], f)
-    #         pickle.dump(Y_class, f)
-    #         pickle.dump(Y_loc, f)
-    
-
+    return output_class, output_loc
     
 
 
-                    
-                
+from keras import losses, optimizers
+from keras.models import Model, load_model
+from keras.layers import Input
 
 
-            
-            
-            
-            # pick whether to include deformaion
-                # if includes deformation:
-                        #, generate with random parameters (but ensure signal is correct size)
-                        # check visible within scene
-            # write label
-            # conver to different forms.  
-                
-    
-    # save rank 4 ma to file (or files, with different formats in different files.)
-    
-#%%
-test = {}
-for output in outputs:
-    test[output] = np.random.rand(10,2)
-    
-    
-    
-#%%
+from detect_locate_nn_functions import train_double_network, file_merger
+from detect_locate_plotting_functions import custom_training_history
 
-import matplotlib
-import numpy as np
-import matplotlib.cm as cm
-import matplotlib.pyplot as plt
+print('\nStep 06: Training the CNN')
+K.clear_session()                                                                                               # makes nameing models easier 
+
+data_files = sorted(glob.glob(f'step_04_merged_rescaled_data/*npz'), key = os.path.getmtime)                  # make list of files
+bottleneck_files = sorted(glob.glob(f'step_05_bottleneck/*npz'), key = os.path.getmtime)            
+
+data_files_train, data_files_validate, data_files_test = file_list_divider(data_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])                              # divide the files into train, validate and test
+bottleneck_files_train, bottleneck_files_validate, bottleneck_files_test = file_list_divider(bottleneck_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])      # also divide the bottleneck files
 
 
+X_validate, Y_class_validate, Y_loc_validate = file_merger(ifg_settings['n_per_file'], data_files_validate)                                             # Open all the validation data to RAM
+X_validate_btln, Y_class_validate, Y_loc_validate = file_merger(ifg_settings['n_per_file'], bottleneck_files_validate, ny=7, nx=7, n_channels=512)      # Open the validation data bottleneck features to RAM
 
-X, Y = np.meshgrid(np.arange(0,mask_coh_water.shape[1]), np.arange(0,mask_coh_water.shape[0]))
+print(f'    There are {len(data_files)} data files.  {len(data_files_train)} will be used for training, {len(data_files_validate)} for validation, and {len(data_files_test)} for testing.  ')
+
+vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))              # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define out own )
+fc_model_input = Input(shape = vgg16_block_1to5.output_shape[1:])                                           # This returns a tensor and will be the inputs to the fully connected model
+output_class, output_loc = define_two_head_model(fc_model_input)                                           # build the full connected part of the model, and get the two model outputs
+vgg16_2head_fc = Model(inputs=fc_model_input, outputs=[output_class, output_loc])                               # define the model.  Input is the shape of vgg16 block 1 to 5 output, and there are two outputs (hence list)                                
+plot_model(vgg16_2head_fc, to_file=f'step_06_train_fully_connected_model/vgg16_2head_fc.png',           # also plot the model.  This funtcion is known to be fragile due to Graphviz dependencies.  
+           show_shapes = True, show_layer_names = True)
+
+loss_class = losses.categorical_crossentropy                                                            # good loss to use for classification problems, may need to switch to binary if only two classes though?
+loss_loc = losses.mean_squared_error                                                                    # loss for localisation
+opt_used = optimizers.Nadam(clipnorm = 1., clipvalue = 0.5)                                             # adam with Nesterov accelerated gradient
+
+vgg16_2head_fc.compile(optimizer = opt_used, loss=[loss_class, loss_loc],                               # compile the model
+                       loss_weights = fc_loss_weights, metrics=['accuracy'])                            # accuracy is useful to have on the terminal during training
 
 
-fig, ax = plt.subplots()
-#CS = ax.contourf(X, Y, mask_coh_water, alpha = 0.1)
-#ax.clabel(CS, inline=1, fontsize=10)
-ax.set_title('Simplest default with labels')
-#ax.imshow(defo_m)
+vgg16_2head_fc,  metrics_class_fc, metrics_localisation_fc, metrics_combined_loss_fc = train_double_network(vgg16_2head_fc, bottleneck_files_train,
+                                                                                                            n_epochs_fc, ['class_dense3_loss', 'loc_dense6_loss'],
+                                                                                                            X_validate_btln, Y_class_validate, Y_loc_validate, len(synthetic_ifgs_settings['defo_sources']))
+
+custom_training_history(metrics_class_fc, n_epochs_fc, title = 'Fully connected classification training')
+custom_training_history(metrics_localisation_fc, n_epochs_fc, title = 'Fully connected localisation training')
+
+vgg16_2head_fc.save_weights(f'step_06_train_fully_connected_model/vgg16_2head_fc.h5')
+
+
+#import sys; sys.exit()
+
+#%% Train the whole network
+
+vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))              # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define out own )
+output_class, output_loc = define_two_head_model(model_input = vgg16_block_1to5.output)                                           # build the full connected part of the model, and get the two model outputs
+
+vgg16_2head = Model(inputs=vgg16_block_1to5.input, outputs=[output_class, output_loc])
+vgg16_2head.load_weights(f'step_06_train_fully_connected_model/vgg16_2head_fc.h5', by_name = True)                                           # load the weights, by_name flag so that it doesn't matter that the models are different sizes
+
+#vgg16_2head.save(f'{unique_folder}/01_vgg16_2head.h5')
+#np.savez(f'{unique_folder}/training_history.npz', metrics_fc_class = metrics_fc_class, metrics_fc_loc = metrics_fc_loc)                            #, source_names = source_names)  
+
+
+for layer in vgg16_2head.layers[:15]:                    # freeze blocks 1-4
+    layer.trainable = False    
+
+#block5_optimiser = optimizers.RMSprop(lr=block5_lr)                                      
+block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                        
+vgg16_2head.compile(optimizer = block5_optimiser, metrics=['accuracy'],                                  # recompile as we've changed which layers can be trained
+                    loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  # 
+
+if laptop:
+    plot_model(vgg16_2head, to_file='vgg16_2head.png', show_shapes = True, show_layer_names = True)
+
+#validate_temp = vgg16_2head.evaluate(X_validate, [Y_class_validate, Y_loc_validate], batch_size = 32, verbose = 1)
+
+# print('Forward pass of the testing data through the network:')
+# Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head.predict(X_test[:,:,:,:], verbose = 1)                                    # predict class labels 
+# for i in range(4):    
+#     plot_data_class_loc(X_test, np.random.randint(0,X_test.shape[0],15), classes = Y_class_test, classes_predicted = Y_class_test_cnn,
+#                                                                 locs = Y_loc_test, locs_predicted=Y_loc_test_cnn, source_names = source_names)
+
+
+
+#% Fine tune the final (5th) convolutional block
+
+print('\n\nTraining the 5th convolutional block.')
+vgg16_2head, metrics_class_5th, metrics_localisation_5th, metrics_combined_loss_5th = train_double_network(vgg16_2head, data_files_train,
+                                                                                                           n_epochs_block5, ['class_dense3_loss', 'loc_dense6_loss'],
+                                                                                                           X_validate, Y_class_validate, Y_loc_validate, len(synthetic_ifgs_settings['defo_sources']))
+
+custom_training_history(metrics_class_5th, n_epochs_block5, title = '5th block classification training')
+custom_training_history(metrics_localisation_5th, n_epochs_block5, title = '5th block localisation training')
+
+vgg16_2head.save(f'step_07_train_full_model/01_vgg16_2head_block5_trained.h5')
+np.savez(f'step_07_train_full_model/training_history.npz', metrics_class_fc = metrics_class_fc,
+                                                     metrics_localisation_fc = metrics_localisation_fc,
+                                                     metrics_combined_loss_fc = metrics_combined_loss_fc,
+                                                     metrics_class_5th = metrics_class_5th,
+                                                     metrics_localisation_5th = metrics_localisation_5th,
+                                                     metrics_combined_loss_5th = metrics_combined_loss_5th)
+
+
+
+
+#%% 7: Train the whole of the CNN
+
+
+#%% 8: Test with synthetic and real data
+
+
 
 

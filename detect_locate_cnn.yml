@@ -7,6 +7,8 @@ dependencies:
   - python=3.6
   - keras
   - tensorflow
+  - pydot                                 # needed by Keras to plot models
+  - graphviz                              # needed by Keras to plot models
   - numpy
   - scipy
   - spyder

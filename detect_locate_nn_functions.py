@@ -8,6 +8,133 @@ Created on Wed Oct 28 15:14:07 2020
 
 #%%
 
+def train_double_network(model, files, n_epochs, loss_names,
+                                    X_validate, Y_class_validate, Y_loc_validate, n_classes):
+    """Train a double headed model using training data stored in separate files.  
+    Inputs:
+        model | keras model | the model to be trained
+        files | list | list of paths and filenames for the files used during training
+        n_epochs | int | number of epochs to train for
+        loss names | list | names of outputs of losses (e.g. "class_dense3_loss)
+    Returns
+        model | keras model | updated by the fit process
+        metrics_loss | r2 array | columns are: total loss/class loss/loc loss /validate total loss/validate class loss/ validate loc loss
+        metrics_class | r2 array | columns are class accuracy, validation class accuracy
+        
+    2019/03/25 | Written.  
+    """
+    import numpy as np
+    import keras
+    
+    n_files_train = len(files)                                                              # get the number of training files
+    
+    metrics_class = np.zeros((n_files_train*n_epochs, 2))                                    # train class acuracy, valiate class accuracy
+    metrics_loss = np.zeros((n_files_train*n_epochs, 6))                                     # total loss/class loss/loc loss /validate total loss/validate class loss/ validate loc loss
+    
+    for e in range(n_epochs):                                                                        # loop through the number of epochs
+        for file_num, file in enumerate(files):                                   # for each epoch, loop through all files once
+        
+            data = np.load(file)
+            X_batch = data['X']
+            Y_batch_class = data['Y_class']
+            Y_batch_loc = data['Y_loc']
+            
+            if n_classes !=  Y_batch_class.shape[1]:
+                Y_batch_class = keras.utils.to_categorical(Y_batch_class, n_classes, dtype='float32')       # convert to one hot encoding (from class labels)
+                
+    
+            history_train_temp = model.fit(X_batch, [Y_batch_class, Y_batch_loc], batch_size=32, epochs=1, verbose = 0)
+             
+            metrics_loss[(e*n_files_train)+file_num, 0] = history_train_temp.history['loss'][0]                        # main los    
+            metrics_loss[(e*n_files_train)+file_num, 1] = history_train_temp.history[loss_names[0]][0]                 # class loss
+            metrics_loss[(e*n_files_train)+file_num, 2] = history_train_temp.history[loss_names[1]][0]                 # localization loss
+            metrics_class[(e*n_files_train)+file_num, 0] = history_train_temp.history['class_dense3_accuracy'][0]           # classification accuracy        
+            print(f'Epoch {e}, file {file_num}: Loss = {round(metrics_loss[(e*n_files_train)+file_num, 0],0)}, '
+                                       f'Class. loss = {round(metrics_loss[(e*n_files_train)+file_num, 1],2)}, '
+                                       f'Class. acc. = {round(metrics_class[(e*n_files_train)+file_num, 0],2)}, '
+                                         f'Loc. loss = {round(metrics_loss[(e*n_files_train)+file_num, 2],0)}')
+            
+            
+            
+            
+        history_validate_temp = model.evaluate(X_validate, [Y_class_validate, Y_loc_validate], batch_size = 32, verbose = 0)
+        metrics_loss[(e*n_files_train)+file_num, 3] = history_validate_temp[0]                                          # main loss
+        metrics_loss[(e*n_files_train)+file_num, 4] = history_validate_temp[1]                                          # class loss
+        metrics_loss[(e*n_files_train)+file_num, 5] = history_validate_temp[2]                                          # localisation loss
+        metrics_class[(e*n_files_train)+file_num, 1] = history_validate_temp[3]                                         # classification  accuracy
+        print(f'Epoch {e}, valid.: Loss = {round(metrics_loss[(e*n_files_train)+file_num, 3],0)}, '
+                          f'Class. loss = {round(metrics_loss[(e*n_files_train)+file_num, 4],2)}, '
+                          f'Class. acc. = {round(metrics_class[(e*n_files_train)+file_num, 1],2)}, '
+                            f'Loc. loss = {round(metrics_loss[(e*n_files_train)+file_num, 5],0)}')
+    
+
+    metrics_class = np.hstack((metrics_loss[:,1:2], metrics_loss[:,4:5], metrics_class ))                       # class loss, validate class loss, class accuracy, validate class accuracy
+    metrics_localisation = np.hstack((metrics_loss[:,2:3], metrics_loss[:,5:]))                                 # localisation loss, validate localisation loss, localisation accuracy, validate localisation accuracy
+    metrics_combined_loss = np.hstack((metrics_loss[:,1:2], metrics_loss[:,3:4]))                               # class accuracy, validate class accuracy
+    
+    return model, metrics_class, metrics_localisation, metrics_combined_loss
+    
+
+
+#%%
+
+def file_merger(n_data_per_file, files, ny=224, nx=224, n_channels=3): 
+    """Given a list of files, open them and merge into one array.  
+    Inputs:
+        one_hot | boolean | if True, Y_class is different shape
+    Also rescale the array to the custom range
+    """
+    import numpy as np
+    
+    def open_synthetic_data_npz(name_with_path):
+        """Open a file data file """  
+        data = np.load(name_with_path)
+        X = data['X']
+        Y_class = data['Y_class']
+        Y_loc = data['Y_loc']
+        return X, Y_class, Y_loc
+
+    n_files = len(files)
+    X = np.zeros((n_data_per_file * n_files, ny, nx, n_channels))                    # initate array, rank4 for image
+    Y_loc = np.zeros((n_data_per_file * n_files, 4))                                # four columns for bounding box
+    
+    for i, file in enumerate(files):
+        X_batch, Y_class_batch, Y_loc_batch = open_synthetic_data_npz(file)
+        if i == 0:
+            Y_class = np.zeros((n_data_per_file * n_files, Y_class_batch.shape[1]))                              # should be flexible with class labels or one hot encoding
+        
+        X[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:,:,:] = X_batch
+        Y_class[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:] = Y_class_batch
+        Y_loc[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:] = Y_loc_batch
+    
+    return X, Y_class, Y_loc 
+
+#%%
+
+def file_list_divider(file_list, n_files_train, n_files_validate, n_files_test):
+    """ Given a list of files, divide it up into training, validating, and testing lists.  
+    Inputs
+        file_list | list | list of files
+        n_files_train | int | Number of files to be used for training
+        n_files_validate | int | Number of files to be used for validation (during training)
+        n_files_test | int | Number of files to be used for testing
+    Returns:
+        file_list_train | list | list of training files
+        file_list_validate | list | list of validation files
+        file_list_test | list | list of testing files
+    History:
+        2019/??/?? | MEG | Written
+        2020/11/02 | MEG | Write docs
+        """
+    file_list_train = file_list[:n_files_train]
+    file_list_validate = file_list[n_files_train:(n_files_train+n_files_validate)]
+    file_list_test = file_list[(n_files_train+n_files_validate) : (n_files_train+n_files_validate+n_files_test)]
+    return file_list_train, file_list_validate, file_list_test
+
+
+
+#%%
+
 def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225}):
     """ 
     Inputs:
