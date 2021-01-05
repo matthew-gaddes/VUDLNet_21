@@ -78,11 +78,18 @@ def train_double_network(model, files, n_epochs, loss_names,
 
 #%%
 
-def file_merger(n_data_per_file, files, ny=224, nx=224, n_channels=3): 
+def file_merger(files): 
     """Given a list of files, open them and merge into one array.  
     Inputs:
-        one_hot | boolean | if True, Y_class is different shape
-    Also rescale the array to the custom range
+        files | list | list of paths to the .npz files
+    Returns
+        X | r4 array | data
+        Y_class | r2 array | class labels, ? x n_classes
+        Y_loc | r2 array | locations of signals, ? x 4 (as x,y, width, heigh)
+    History:
+        2020/10/?? | MEG | Written
+        2020/11/11 | MEG | Update to remove various input arguments
+    
     """
     import numpy as np
     
@@ -95,13 +102,15 @@ def file_merger(n_data_per_file, files, ny=224, nx=224, n_channels=3):
         return X, Y_class, Y_loc
 
     n_files = len(files)
-    X = np.zeros((n_data_per_file * n_files, ny, nx, n_channels))                    # initate array, rank4 for image
-    Y_loc = np.zeros((n_data_per_file * n_files, 4))                                # four columns for bounding box
     
     for i, file in enumerate(files):
         X_batch, Y_class_batch, Y_loc_batch = open_synthetic_data_npz(file)
         if i == 0:
-            Y_class = np.zeros((n_data_per_file * n_files, Y_class_batch.shape[1]))                              # should be flexible with class labels or one hot encoding
+            n_data_per_file = X_batch.shape[0]
+            X = np.zeros((n_data_per_file * n_files, X_batch.shape[1], X_batch.shape[2], X_batch.shape[3]))      # initate array, rank4 for image, get the size from the first file
+            Y_class = np.zeros((n_data_per_file  * n_files, Y_class_batch.shape[1]))                              # should be flexible with class labels or one hot encoding
+            Y_loc = np.zeros((n_data_per_file * n_files, 4))                                                     # four columns for bounding box
+            
         
         X[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:,:,:] = X_batch
         Y_class[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:] = Y_class_batch
@@ -151,17 +160,24 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
     import numpy as np
     import numpy.ma as ma
     
-    def data_channel_checker(X, n_cols = 7, window_title = None):
-        """ Plot some of the data in X randomly.  All three channels are shown.  
+    def data_channel_checker(X, n_cols = None, window_title = None):
+        """ Plot some of the data in X.   All three channels are shown.  
         """
         import matplotlib.pyplot as plt        
+        if n_cols == None:                                              # if n_cols is None, we'll plot all the data
+            n_cols = X.shape[0]                                         # so n_cols is the number of data
+            plot_args = np.arange(0, n_cols)                            # and we'll be plotting each of them
+        else:
+            plot_args = np.random.randint(0, X.shape[0], n_cols)        # else, pick some at random to plot
         f, axes = plt.subplots(3,n_cols)
         if window_title is not None:
             f.canvas.set_window_title(window_title)
-        for plot_n, im_n in enumerate(np.random.randint(0, X.shape[0], n_cols)):
+        for plot_n, im_n in enumerate(plot_args):                           # loop through each data (column)               
             axes[0, plot_n].set_title(f"Data: {im_n}")
-            for channel_n in range(3):
+            for channel_n in range(3):                                      # loop through each row
                 axes[channel_n, plot_n].imshow(X[im_n, :,:,channel_n])
+                if plot_n == 0:
+                    axes[channel_n, plot_n].set_ylabel(f"Channel {channel_n}")
 
     if len(synthetic_data_files) != len(real_data_files):
         raise Exception('This funtion is only designed to be used when the number of real and synthetic data files are the same.  Exiting.  ')
@@ -182,9 +198,9 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
             Y_loc_synth = pickle.load(f)
         f.close()    
 
-        X = ma.concatenate((X_real, X_synth), axis = 0)                                             # concatenate them
-        Y_class = ma.concatenate((Y_class_real, Y_class_synth), axis = 0)
-        Y_loc = ma.concatenate((Y_loc_real, Y_loc_synth), axis = 0)
+        X = ma.concatenate((X_real, X_synth), axis = 0)                                             # concatenate the data
+        Y_class = ma.concatenate((Y_class_real, Y_class_synth), axis = 0)                           # and the class labels
+        Y_loc = ma.concatenate((Y_loc_real, Y_loc_synth), axis = 0)                                 # and the location labels
         
         mix_index = np.arange(0, X.shape[0])                                                        # mix them, get a lis of arguments for each data 
         np.random.shuffle(mix_index)                                                                # shuffle the arguments
@@ -201,10 +217,12 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
         out_file += 1                                                                                                                                                       # and after saving again, update
         print('Done.  ')
         
-        # data_channel_checker(X)
-        # data_channel_checker(X_real, window_title = 'X_real')
-        # data_channel_checker(X_synth, window_title = 'X_synth')
-        # data_channel_checker(X_rescale, window_title = 'X_rescale')
+        data_channel_checker(X, window_title = 'Merged')
+        data_channel_checker(X_real, window_title = 'X_real')
+        data_channel_checker(X_synth, window_title = 'X_synth')
+        data_channel_checker(X_rescale, window_title = 'X_rescale')
+        
+        import sys; sys.exit()
 
 #%%
 
@@ -286,40 +304,53 @@ def augment_data(X, Y_class, Y_loc, n_data = 500):
     
     
     # do all possible fips - now have 4x as much data
-    flips = ['up_down', 'left_right', 'both']
-    X_aug = [X]                                                                     # make this an entry in a list
+    flips = ['up_down', 'left_right', 'both']                                       # the three possible types of flip
+    X_aug = [X]                                                                     # make the original data an entry in a list
     Y_loc_aug = [Y_loc]                                                             # ditto
     for flip in flips:
         X_temp, Y_loc_temp = augment_flip(X, Y_loc, flip)                           # do the augmentaiton via one of the flips.  
         X_aug.append(X_temp)                                                        # append to the lis of data
         Y_loc_aug.append(Y_loc_temp)                                                # also append the new locations (as they change with flips)
-    X_aug = ma.vstack(X_aug)                                                        # convert from a list back to one big array (ie stack along the first axis)
+    X_aug = ma.vstack(X_aug)                                                        # convert from a list back to one big array (ie stack along the first axis).  If we had n data, we now have 4n
     Y_loc_aug = np.vstack(Y_loc_aug)                                                # and for locations
     Y_class_aug = np.tile(Y_class, (4,1))                                           # classes don't change with flips etc. so can just be repeated.  
         
     # rotate
     X_aug = [X_aug]                                                                # convert back to an entry in a list
-    Y_loc_aug = [Y_loc_aug]
-    for random_rotate in range(3):
-        X_temp, Y_loc_temp = augment_rotate(X_aug[0], Y_loc_aug[0])
+    Y_loc_aug = [Y_loc_aug]                                                        # same for locations
+    for random_rotate in range(3):                                                 # 4n data will again become 16n data, as we will do 3 sets of rotations and keep the originals.  
+        X_temp, Y_loc_temp = augment_rotate(X_aug[0], Y_loc_aug[0])                # rotate 4n data to make another 4n of data
         X_aug.append(X_temp)
         Y_loc_aug.append(Y_loc_temp)
-    X_aug = ma.vstack(X_aug)
-    Y_loc_aug = np.vstack(Y_loc_aug)
-    Y_class_aug = np.tile(Y_class_aug, (4,1))    
+    X_aug = ma.vstack(X_aug)                                                       # 4 entries of 4n data are converted to 16n data
+    Y_loc_aug = np.vstack(Y_loc_aug)                                               # same for locations
+    Y_class_aug = np.tile(Y_class_aug, (4,1))                                      # classes don't change so can just be copied
 
     # translate
-    X_aug = [X_aug]                                                                # first one is just the original
+    X_aug = [X_aug]                                                                # now have 16n data, which becomes first item in list
     Y_loc_aug = [Y_loc_aug]
-    for random_translate in range(3):
-        X_temp, Y_loc_temp = augment_translate(X_aug[0],  Y_loc_aug[0], max_translate = (20,20))
+    for random_translate in range(3):                                              # 16n data will again become 64n data, as we will do 3 sets of translations and keep the originals.  
+        X_temp, Y_loc_temp = augment_translate(X_aug[0],  Y_loc_aug[0], max_translate = (20,20)) 
         X_aug.append(X_temp)
         Y_loc_aug.append(Y_loc_temp)
-    X_aug = ma.vstack(X_aug)
+    X_aug = ma.vstack(X_aug)                                                        # 4 entries of 16n data are converted to 64n data
     Y_loc_aug = np.vstack(Y_loc_aug)
     Y_class_aug = np.tile(Y_class_aug, (4,1))    
     
-    return X_aug[:n_data], Y_class_aug[:n_data], Y_loc_aug[:n_data]
+    
+    # shuffle along the first axis (otherwise with small values of n_data, we just get the first (and original) data back.  )
+    data_dict = {'X'       : X_aug,                                                      # package the data and labels together into a dict
+                 'Y_class' : Y_class_aug,
+                 'Y_loc'   : Y_loc_aug}
+    
+    data_dict_shuffled = shuffle_arrays(data_dict)                                          # shuffle (so that these aren't in the order of the class labels)
+    
+    X_aug = data_dict_shuffled['X']                                                      # and unpack as this function doesn't use dictionaries
+    Y_class_aug = data_dict_shuffled['Y_class']
+    Y_loc_aug = data_dict_shuffled['Y_loc']
+    
+    
+    return X_aug[:n_data], Y_class_aug[:n_data], Y_loc_aug[:n_data]                     # return, and select only the desired data.  
 
 #%%
 
@@ -464,7 +495,7 @@ def choose_for_augmentation(X, Y_class, Y_loc, n_per_class):
                  'Y_class' : Y_class_sample,
                  'Y_loc'   : Y_loc_sample}
     
-    data_dict_shuffled = shuffle_arrays(data_dict)                                          # shuffle (so that these aren't in the order of the class labe)
+    data_dict_shuffled = shuffle_arrays(data_dict)                                          # shuffle (so that these aren't in the order of the class labels)
     
     X_sample = data_dict_shuffled['X']                                                      # and unpack as this function doesn't use dictionaries
     Y_class_sample = data_dict_shuffled['Y_class']

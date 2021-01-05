@@ -116,6 +116,9 @@ def plot_data_class_loc_caller(X_m, classes=None, locs=None, classes_predicted=N
     """ A function to call plot_data_class_loc to plot more than 15 ifgs.  
     
     Inputs as per 'plot_data_class_loc'   
+    History:
+        2019/??/?? | MEG | Written
+        2020/11/11 | MEG | Fix bug in how window_title is handled when there is only one plot
     """
     import numpy as np
     
@@ -124,7 +127,7 @@ def plot_data_class_loc_caller(X_m, classes=None, locs=None, classes_predicted=N
     all_args = np.arange(0,n_data)
     
     if n_plots == 1:
-        plot_data_class_loc(X_m, all_args, classes, locs, classes_predicted, locs_predicted, source_names, point_size, figsize)
+        plot_data_class_loc(X_m, all_args, classes, locs, classes_predicted, locs_predicted, source_names, point_size, figsize, window_title)
     
     else:
         for n_plot in np.arange(n_plots-1):
