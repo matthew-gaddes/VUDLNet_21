@@ -145,7 +145,8 @@ def file_list_divider(file_list, n_files_train, n_files_validate, n_files_test):
 #%%
 
 def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225}):
-    """ 
+    """ Given a list of synthetic data files and real data files (usually the augmented real data),
+    
     Inputs:
         synthetic_data_files | list of Paths or string | locations of the .pkl files containing the masked arrays
         reak_data_files      | list of Paths or string | locations of the .pkl files containing the masked arrays
@@ -210,31 +211,30 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
 
         X_rescale = custom_range_for_CNN(X, output_range, mean_centre = False)                      # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255]), and convert to numpy array
                 
-        data_mid = int(X_rescale.shape[0] / 2)                                                                                                                                  # data before this number in one file, and after in another
-        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])                            #, source_names = source_names)  
-        out_file += 1                                                                                                                                                           # after saving once, update
-        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])                            #, source_names = source_names)  
-        out_file += 1                                                                                                                                                       # and after saving again, update
+        data_mid = int(X_rescale.shape[0] / 2)                                                                                                                          # data before this number in one file, and after in another
+        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X_rescale[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])           # save the first half of the data
+        out_file += 1                                                                                                                                                   # after saving once, update
+        np.savez(f'step_04_merged_rescaled_data/data_file_{out_file}.npz', X = X_rescale[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])           # save the second half of the data
+        out_file += 1                                                                                                                                                   # and after saving again, update again.  
         print('Done.  ')
         
-        data_channel_checker(X, window_title = 'Merged')
-        data_channel_checker(X_real, window_title = 'X_real')
-        data_channel_checker(X_synth, window_title = 'X_synth')
-        data_channel_checker(X_rescale, window_title = 'X_rescale')
+        # data_channel_checker(X, window_title = 'Merged')
+        # data_channel_checker(X_real, window_title = 'X_real')
+        # data_channel_checker(X_synth, window_title = 'X_synth')
+        # data_channel_checker(X_rescale, window_title = 'X_rescale')
         
-        import sys; sys.exit()
 
 #%%
 
 def custom_range_for_CNN(r4_array, min_max, mean_centre = False):
-    """ Rescale a rank 4 array so that each channels image lies in custom range
+    """ Rescale a rank 4 array so that each channel's image lies in custom range
     e.g. input with range of (-5, 15) is rescaled to (-125 125) or (-1 1) for use with VGG16 
     Inputs:
         r4_array | r4 masked array | works with masked arrays?  
         min_max | dict | 'min' and 'max' of range desired as a dictionary.  
         mean_centre | boolean | if True, each image's channels are mean centered.  
     Returns:
-        r4_array | rank 4 numpy array | masked items are set to zero, rescaled so taht each channel for each image lies between min_max limits.  
+        r4_array | rank 4 numpy array | masked items are set to zero, rescaled so that each channel for each image lies between min_max limits.  
     History:
         2019/03/20 | now includes mean centering so doesn't stretch data to custom range.  
                     Instead only stretches until either min or max touches, whilst mean is kept at 0
@@ -244,16 +244,16 @@ def custom_range_for_CNN(r4_array, min_max, mean_centre = False):
     import numpy.ma as ma
     
     if mean_centre:
-        im_channel_means = np.mean(r4_array, axis = (1,2))                                                  # get the average for each image (in all thre channels)
+        im_channel_means = ma.mean(r4_array, axis = (1,2))                                                  # get the average for each image (in all thre channels)
         im_channel_means = expand_to_r4(im_channel_means, r4_array[0,:,:,0].shape)                                                   # expand to r4 so we can do elementwise manipulation
         r4_array -= im_channel_means                                                                        # do mean centering    
 
 
-    im_channel_min = np.min(r4_array, axis = (1,2))                                         # get the minimum of each image and each of its channels
+    im_channel_min = ma.min(r4_array, axis = (1,2))                                         # get the minimum of each image and each of its channels
     im_channel_min = expand_to_r4(im_channel_min, r4_array[0,:,:,0].shape)                  # exapnd to rank 4 for elementwise applications
     r4_array -= im_channel_min                                                              # set so lowest channel for each image is 0
     
-    im_channel_max = np.max(r4_array, axis = (1,2))                                         # get the maximum of each image and each of its channels
+    im_channel_max = ma.max(r4_array, axis = (1,2))                                         # get the maximum of each image and each of its channels
     im_channel_max = expand_to_r4(im_channel_max, r4_array[0,:,:,0].shape)              # make suitable for elementwise applications
     r4_array /= im_channel_max                                                              # should now be in range [0, 1]
     

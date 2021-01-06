@@ -107,7 +107,7 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
                            'turb_aps_length'        : 5000}                                     # turbulent APS will be correlated on this length scale, in metres.  
 
 #step 03 (load real data and augment):
-real_ifg_settings       = {'augmentation_factor' : 2}                                           # factor to agument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
+real_ifg_settings       = {'augmentation_factor' : 10}                                           # factor to agument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
 
 # step 04 (merge synthetic and real, and rescale to desired range)
 cnn_settings = {'input_range'       : {'min':0, 'max':255}}
@@ -235,44 +235,54 @@ f.close()
 plot_data_class_loc_caller(X, Y_class, Y_loc, source_names = ['dyke', 'sill', 'no def'], window_title = '02 Real data')         # plot the data in it (note that this can be across multiople windows)
 print('Done.  ')
 
-#print('Commented out the augmentation as a quick fix.  ')
 
 n_augmented_files = int((X.shape[0] * real_ifg_settings['augmentation_factor']) / ifg_settings['n_per_file'])                   # detemine how many files will be needed, given the agumentation factor.  
-print(f"    There are {X.shape[0]} real data and the augmentation factor is set to {real_ifg_settings['augmentation_factor']}.  ")
-print(f"    With {ifg_settings['n_per_file']} data per file, the nearest integer number of files is {n_augmented_files}.  ")
-for n_augmented_file in range(n_augmented_files):                                                                               # loop through each file that is to be made
-    print(f'    File {n_augmented_file} of {n_augmented_files}...', end = '')  
-    X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X, Y_class, Y_loc,                                         # make a new selection of the data with balanced classes
-                                                                     n_per_class = int(X.shape[0] / Y_class.shape[1]))          # set it so there are as many per class as there are (on average) for the real data.  
-    X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample,                                        # augment the sample of real data
-                                                 n_data = ifg_settings['n_per_file'])                                           # make as many new data as are set to be in a single file.  
 
-    with open(f"./step_03_real_data/augmented/data_file_{n_augmented_file}.pkl", 'wb') as f:                                        # save the output as a pickle
-        pickle.dump(X_aug, f)
-        pickle.dump(Y_class_aug, f)
-        pickle.dump(Y_loc_aug, f)
-    f.close()
-    print('Done!')
-print('Done!')
+print('    Determining if files containing the augmented real data exist.')
+real_augmented_files = glob.glob(str(Path(f"./step_03_real_data/augmented/*.pkl")))             #
+if len(real_augmented_files) == n_augmented_files:
+    print(f"    The correct number of augmented real data files were found ({n_augmented_files}) so no new ones will be generated.  "
+          f"However, this doesn't guarantee that the files were made using the current real data.  ")
+else:
+    print(f"    {len(real_augmented_files)} files were found, but {n_augmented_files} were requested.  "
+          f"The folder containing these (./step_03_real_data/augmented) will be deleted, and the correct number of files generated.  ")
+    answer = input("Do you wish to continue ('y' or 'n')?")
+    if answer == 'n':
+        sys.exit()
+    elif answer == 'y':
+        try:
+            shutil.rmtree(str(Path(f"./step_03_real_data/augmented/")))
+        except:
+            pass
+        os.mkdir((Path(f"./step_03_real_data/augmented/")))
+
+        print(f"    There are {X.shape[0]} real data and the augmentation factor is set to {real_ifg_settings['augmentation_factor']}.  ")
+        print(f"    With {ifg_settings['n_per_file']} data per file, the nearest integer number of files is {n_augmented_files}.  ")
+        for n_augmented_file in range(n_augmented_files):                                                                               # loop through each file that is to be made
+            print(f'    File {n_augmented_file} of {n_augmented_files}...', end = '')  
+            X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X, Y_class, Y_loc,                                         # make a new selection of the data with balanced classes
+                                                                              n_per_class = int(X.shape[0] / Y_class.shape[1]))          # set it so there are as many per class as there are (on average) for the real data.  
+            X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample,                                        # augment the sample of real data
+                                                          n_data = ifg_settings['n_per_file'])                                           # make as many new data as are set to be in a single file.  
+        
+            with open(f"./step_03_real_data/augmented/data_file_{n_augmented_file}.pkl", 'wb') as f:                                        # save the output as a pickle
+                pickle.dump(X_aug, f)
+                pickle.dump(Y_class_aug, f)
+                pickle.dump(Y_loc_aug, f)
+            f.close()
+            print('Done!')
+        print('Done!')
 
 open_datafile_and_plot("./step_03_real_data/augmented/data_file_0.pkl", n_data = 15, window_title = '03 Sample of augmented real data')
 
-import sys; sys.exit()
-
-#%
-
-# with open(f"./step_03_real_data/augmented/data_file_0.pkl", 'rb') as f:
-#     Xa = pickle.load(f)                                                                                                          # this is a masked array
-#     Y_classa = pickle.load(f)                                                                                                    # numpy array, one hot encoding
-#     Y_loca = pickle.load(f)                                                                                                      # numpy array
-    
+ 
 
 
 #%% 4: Merge real and synthetic data, and rescale to desired range (e.g. [0, 1], [0, 255], [-125, 125] etc)
 
-print("\nStep 04: Mergring the real and synthetic interferograms and rescaling to CNNs input range.")
-
 from detect_locate_nn_functions import merge_and_rescale_data
+
+print("\nStep 04: Mergring the real and synthetic interferograms and rescaling to CNNs input range.")
 
 synthetic_data_files = glob.glob(str(Path(f"./step_02_synthetic_data/{synthetic_ifgs_folder}/*.pkl")))                       # get the paths to each file of synthetic data
 real_data_files = glob.glob(str(Path(f"./step_03_real_data/augmented//*.pkl")))                                              # get the paths to each file of real data
@@ -280,6 +290,10 @@ merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['inpu
 
 open_datafile_and_plot("./step_04_merged_rescaled_data/data_file_0.npz", n_data = 15, window_title = ' 04 Sample of merged and rescaled data')
 
+
+# fix the conversion from masked array to numpy array......
+
+import sys; sys.exit()
 
 #%% 5: Compute bottlenceck features
 
