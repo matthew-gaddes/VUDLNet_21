@@ -58,6 +58,7 @@ def open_smithsonian_csv_file(smithsonian_csv_file, side_length = 40e3):
 
 
 import numpy as np
+import numpy.ma as ma 
 import pickle
 import sys
 import glob
@@ -91,7 +92,7 @@ n_volcanoes_used = 5                                                            
 
 #step 02 (making synthetic interferograms):
 ifg_settings            = {'n_per_file'         : 50}                                            # number of ifgs per data file.  
-synthetic_ifgs_n_files  =  6                                                                    # numer of files of synthetic data
+synthetic_ifgs_n_files  =  13                                                                    # numer of files of synthetic data
 synthetic_ifgs_folder   = '01_github_example'
 synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def'],               # deformation patterns that will be included in the dataset.  
                            'n_ifgs'                 : ifg_settings['n_per_file'],               # the number of synthetic interferograms to generate PER FILE
@@ -107,7 +108,8 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
                            'turb_aps_length'        : 5000}                                     # turbulent APS will be correlated on this length scale, in metres.  
 
 #step 03 (load real data and augment):
-real_ifg_settings       = {'augmentation_factor' : 10}                                           # factor to agument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
+VolcNet_path = Path('/home/matthew/university_work/02_neural_networks_python/08_VolcNet')
+real_ifg_settings       = {'augmentation_factor' : 3}                                           # factor to auument by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
 
 # step 04 (merge synthetic and real, and rescale to desired range)
 cnn_settings = {'input_range'       : {'min':0, 'max':255}}
@@ -115,27 +117,17 @@ cnn_settings = {'input_range'       : {'min':0, 'max':255}}
 # step 05 (compute bottleneck features): 
     
 # step 06 (train the fully connected part of the network)
-cnn_settings['n_files_train']     = 8
-cnn_settings['n_files_validate']  = 2
-cnn_settings['n_files_test']      = 2 
+cnn_settings['n_files_train']     = 22                                              # the number of files that will be used to train the network
+cnn_settings['n_files_validate']  = 2                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
+cnn_settings['n_files_test']      = 2                                               # the number of files held back for testing.  
+fc_loss_weights = [0.05, 0.95]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+n_epochs_fc = 10                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 
-# step 07 (train the whole network):
-
-
-# n_files_train = 36
-# n_files_validate = 2
-# n_files_test = 2
-# n_epochs_fc = 10
-# fc_loss_weights = [0.05, 0.95]
-# verbose_block5 = False
-# n_epochs_block5 = 2
-# block5_loss_weights = [0.05, 0.95]
-# block5_lr = 1.5e-8                                                            
-# # data_files_path = '/nfs/a1/homes/eemeg/02_neural_networks_python/3_python_defo_atm_data/01_final_synthetic_data/uuu_r1_1'      # Used in thesis in spring 2019
-# data_files_path = '/nfs/a1/homes/eemeg/02_neural_networks_python/03_python_defo_atm_data/01a_final_synthetic_data_v2/uuu_r1_1'        # updated version used in Autumn 2019
-# source_names = ['dyke', 'sill', 'no deformation']            
-# laptop = False
-
+# step 07 (fine-tune the 5th block and the fully connected part of the network):
+block5_loss_weights = [0.05, 0.95]                                                  # as per fc_loss_weights, but by changing these more emphasis can be placed on either the clasification or localisation loss.  
+#block5_lr = 1.5e-8                                                                  # a pretty important parameter.  We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
+block5_lr = 1.0e-6                                                                  # a pretty important parameter.  We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
+n_epochs_block5 = 10                                                                 # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
 
    
 np.random.seed(0)                                                                                           # 0 used in the example
@@ -148,8 +140,8 @@ sys.path.append(dependency_paths['srtm_dem_tools_bin'])
 from dem_tools_lib import SRTM_dem_make_batch                                       # From SRTM dem tools
 from random_generation_functions import create_random_synthetic_ifgs                # From SyInterferoPy
 
-from detect_locate_nn_functions import augment_data, choose_for_augmentation, merge_and_rescale_data, train_double_network, file_list_divider, file_merger                      # from this repo
-from detect_locate_plotting_functions import plot_data_class_loc_caller, open_datafile_and_plot, custom_training_history                                # from this repo
+from detect_locate_nn_functions import augment_data, choose_for_augmentation, merge_and_rescale_data, train_double_network, define_two_head_model, file_list_divider, file_merger, open_VolcNet_file
+from detect_locate_plotting_functions import plot_data_class_loc_caller, open_datafile_and_plot, custom_training_history                                
 
 
 
@@ -224,15 +216,28 @@ else:
 open_datafile_and_plot(f"step_02_synthetic_data/{synthetic_ifgs_folder}/data_file_0.pkl", n_data = 15, window_title ='01 Sample of synthetic data')                                        # open and plot the data in 1 file
 
 
+
 #%% 3: Load the real data (and augment).  Note that these are in metres, and use one hot encoding for the class, and are masked arrays (incoherence and water are masked)
-print("\nStep 03: Loading and augmenting the real interferograms.  ")
+print("\nStep 03: Loading and augmenting the real interferograms from VolcNet.  ")
 print("    Starting to open the real data....", end = '')
-with open("step_03_real_data/real_data_class_locs_subset.pkl", 'rb') as f:                                                      # open the real data file
-    X = pickle.load(f)                                                                                                          # this is a masked array
-    Y_class = pickle.load(f)                                                                                                    # numpy array, one hot encoding
-    Y_loc = pickle.load(f)                                                                                                      # numpy array
-f.close()    
-plot_data_class_loc_caller(X, Y_class, Y_loc, source_names = ['dyke', 'sill', 'no def'], window_title = '02 Real data')         # plot the data in it (note that this can be across multiople windows)
+
+VolcNet_files = sorted(glob.glob(str(VolcNet_path / '*.pkl')))             #  get a list of the paths to all the VolcNet files       
+if len(VolcNet_files) == 0:
+    raise Exception('No VolcNet files have been found.  Perhaps the path is wrong? Or perhaps you only want to use synthetic data?  In which case, this section can be removed.  Exiting...')
+
+X_1s = []
+Y_class_1s = []
+Y_loc_1s = []
+for VolcNet_file in VolcNet_files:
+    X_1, Y_class_1, Y_loc_1 = open_VolcNet_file(VolcNet_file, synthetic_ifgs_settings['defo_sources'])
+    X_1s.append(X_1)
+    Y_class_1s.append(Y_class_1)
+    Y_loc_1s.append(Y_loc_1)
+X = ma.concatenate(X_1s, axis = 0)
+Y_class = np.concatenate(Y_class_1s, axis = 0)
+Y_loc = np.concatenate(Y_loc_1s, axis = 0)
+del X_1s, Y_class_1s, Y_loc_1s, X_1, Y_class_1, Y_loc_1
+plot_data_class_loc_caller(X[:30,], Y_class[:30,], Y_loc[:30,], source_names = ['dyke', 'sill', 'no def'], window_title = '02 Sample of Real data')         # plot the data in it (note that this can be across multiople windows)        
 print('Done.  ')
 
 
@@ -275,7 +280,6 @@ else:
 
 open_datafile_and_plot("./step_03_real_data/augmented/data_file_0.pkl", n_data = 15, window_title = '03 Sample of augmented real data')
 
- 
 
 
 #%% 4: Merge real and synthetic data, and rescale to desired range (e.g. [0, 1], [0, 255], [-125, 125] etc)
@@ -290,72 +294,38 @@ merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['inpu
 
 open_datafile_and_plot("./step_04_merged_rescaled_data/data_file_0.npz", n_data = 15, window_title = ' 04 Sample of merged and rescaled data')
 
-
-# fix the conversion from masked array to numpy array......
-
-import sys; sys.exit()
-
 #%% 5: Compute bottlenceck features
 
 print("\nStep 05: Computing the bottleneck features.")
 print('commented for speed')
-# vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))
+vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))          # load the first 5 (convolutional) blocks of VGG16 and their weights.  
+data_out_files = sorted(glob.glob(f'step_04_merged_rescaled_data/*.npz'))                           # get a list of the files output by step 05 (augmented real data and synthetic data mixed and rescaed to correct range, with 0s for masked areas.  )
 
-# data_out_files = glob.glob(f'step_04_merged_rescaled_data/*.npz')           # get the files outputted by part 1
-
-# for file_n, data_out_file in enumerate(data_out_files):
-#     print(f'Bottlneck file {file_n}:')    
-#     data_out_file = Path(data_out_file)                                               # convert to path object
-#     bottleneck_file_name = data_out_file.parts[-1].split('.')[0]                      # and get last part which is filename    
-#     data = np.load(data_out_file)
-#     X = data['X']
-#     Y_class = data['Y_class']
-#     Y_loc = data['Y_loc']
-#     X_btln = vgg16_block_1to5.predict(X, verbose = 1)                                             # predict up to bottleneck    
-#     np.savez(f'step_05_bottleneck/{bottleneck_file_name}_bottleneck.npz', X = X_btln, Y_class = Y_class, Y_loc = Y_loc)                            #, source_names = source_names)  
+for file_n, data_out_file in enumerate(data_out_files):                                             # loop through each of the step 05 files.  
+    print(f'Bottlneck file {file_n}:')    
+    data_out_file = Path(data_out_file)                                                                                     # convert to path 
+    bottleneck_file_name = data_out_file.parts[-1].split('.')[0]                                                            # and get last part which is filename    
+    data = np.load(data_out_file)                                                                                           # load the numpy file
+    X = data['X']                                                                                                           # extract the data for it
+    Y_class = data['Y_class']                                                                                               # and class labels.  
+    Y_loc = data['Y_loc']                                                                                                   # and location labels.  
+    X_btln = vgg16_block_1to5.predict(X, verbose = 1)                                                                       # predict up to bottleneck    
+    np.savez(f'step_05_bottleneck/{bottleneck_file_name}_bottleneck.npz', X = X_btln, Y_class = Y_class, Y_loc = Y_loc)     # save the bottleneck file, and the two types of label.  
 
 
 #%% 6: Train the fully connected part of the CNN
 
-def define_two_head_model(model_input, n_class_outputs = 3):
-    """ Define the two headed model that we have designed to performed classification of localisation.  
-    Inputs:
-        model_input | tensorflow.python.framework.ops.Tensor | The shape of the tensor that will be input to our model.  Usually the output of VGG16 (?x7x7x512)  Nb ? = batch size.  
-        n_class_output | int | For a one hot encoding style output, there must be as many neurons as classes
-    Returns:
-        output_class |tensorflow.python.framework.ops.Tensor | The shape of the tensor output by the classifiction head.  Usually ?x3
-        output_loc | tensorflow.python.framework.ops.Tensor | The shape of the tensor output by the localisation head.  Usually ?x4
-    History:
-        2020_11_11 | MEG | Written
-    """
-    from keras.layers import Dense, Dropout, Flatten
-    
-    vgg16_block_1to5_flat = Flatten(name = 'vgg16_block_1to5_flat')(model_input)                              # flatten the model input (ie deep representation turned into a column vector)
-
-    # 1: the clasification head
-    x = Dropout(0.2, name='class_dropout1')(vgg16_block_1to5_flat)
-    x = Dense(256, activation='relu', name='class_dense1')(x)                                                 # add a fully connected layer
-    x = Dropout(0.2, name='class_dropout2')(x)
-    x = Dense(128, activation='relu', name='class_dense2')(x)                                                 # add a fully connected layer
-    output_class = Dense(n_class_outputs, activation='softmax',  name = 'class_dense3')(x)                  # and an ouput layer with 7 outputs (ie one per label)
-    
-    # 2: the localization head
-    x = Dense(2048, activation='relu', name='loc_dense1')(vgg16_block_1to5_flat)                                                 # add a fully connected layer
-    x = Dense(1024, activation='relu', name='loc_dense2')(x)                                                 # add a fully connected layer
-    x = Dense(1024, activation='relu', name='loc_dense3')(x)                                                 # add a fully connected layer
-    x = Dropout(0.2, name='loc_dropout1')(x)
-    x = Dense(512, activation='relu', name='loc_dense4')(x)                                                 # add a fully connected layer
-    x = Dense(128, activation='relu', name='loc_dense5')(x)                                                 # add a fully connected layer
-    output_loc = Dense(4, name='loc_dense6')(x)        
-    
-    return output_class, output_loc
-    
-
-print('\nStep 06: Training the CNN')
+print('\nStep 06: Training the fully connected part of the CNN using the bottleneck features.')
 
 # 6.1 deal with files
 data_files = sorted(glob.glob(f'step_04_merged_rescaled_data/*npz'), key = os.path.getmtime)                  # make list of data files
 bottleneck_files = sorted(glob.glob(f'step_05_bottleneck/*npz'), key = os.path.getmtime)                      # and make a list of bottleneck files (ie files that have been passed through the first 5 blocks of vgg16)
+
+if len(data_files) < (cnn_settings['n_files_train'] + cnn_settings['n_files_validate'] + cnn_settings['n_files_test']):
+    raise Exception(f"There are {len(data_files)} data files, but {cnn_settings['n_files_train']} have been selected for training, "
+                    f"{cnn_settings['n_files_validate']} for validation, and {cnn_settings['n_files_test']} for testing, "
+                    f"which sums to greater than the number of data files.  Perhaps adjust the number of files used for the training stages? "
+                    f"For now, exiting.")
 
 data_files_train, data_files_validate, data_files_test = file_list_divider(data_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])                              # divide the files into train, validate and test
 bottleneck_files_train, bottleneck_files_validate, bottleneck_files_test = file_list_divider(bottleneck_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])      # also divide the bottleneck files
@@ -392,48 +362,34 @@ vgg16_2head_fc.save_weights(f'step_06_train_fully_connected_model/vgg16_2head_fc
 
 # 6.3 Test the model
 Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head_fc.predict(X_test_btln, verbose = 1)                                # forward pass of the testing data bottleneck features through the fully connected part of the model
-plot_data_class_loc_caller(X_test, classes = Y_class_test, classes_predicted = Y_class_test_cnn,
-                                      locs = Y_loc_test, locs_predicted = Y_loc_test_cnn, source_names = source_names, window_title = 'Testing data')
+plot_data_class_loc_caller(X_test, classes = Y_class_test, classes_predicted = Y_class_test_cnn,                    # plot all the testing data
+                           locs = Y_loc_test, locs_predicted = Y_loc_test_cnn, 
+                           source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Testing data (after step 06)')
 
 
-
-import sys; sys.exit()
-#%% 7: Train the whole network
+#%% Step 07: Fine-tune the 5th convolutional block and the fully connected network.  
 
 vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))                                       # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define out own )
 output_class, output_loc = define_two_head_model(vgg16_block_1to5.output, len(synthetic_ifgs_settings['defo_sources']))          # build the fully connected part of the model, and get the two model outputs
 
-vgg16_2head = Model(inputs=vgg16_block_1to5.input, outputs=[output_class, output_loc])
-vgg16_2head.load_weights(f'step_06_train_fully_connected_model/vgg16_2head_fc.h5', by_name = True)                                           # load the weights, by_name flag so that it doesn't matter that the models are different sizes
+vgg16_2head = Model(inputs=vgg16_block_1to5.input, outputs=[output_class, output_loc])                                           # define the full model
+vgg16_2head.load_weights(f'step_06_train_fully_connected_model/vgg16_2head_fc.h5', by_name = True)                               # load the weights for the fully connected part which were trained in step 06 (by_name flag so that it doesn't matter that the models are different sizes))
 
-#vgg16_2head.save(f'{unique_folder}/01_vgg16_2head.h5')
-#np.savez(f'{unique_folder}/training_history.npz', metrics_fc_class = metrics_fc_class, metrics_fc_loc = metrics_fc_loc)                            #, source_names = source_names)  
-
-
-for layer in vgg16_2head.layers[:15]:                    # freeze blocks 1-4
+for layer in vgg16_2head.layers[:15]:                                                                                             # freeze blocks 1-4 (ie, we are only fine tuneing the 5th block and the fully connected part of the network)
     layer.trainable = False    
 
 #block5_optimiser = optimizers.RMSprop(lr=block5_lr)                                      
-block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                        
-vgg16_2head.compile(optimizer = block5_optimiser, metrics=['accuracy'],                                  # recompile as we've changed which layers can be trained
-                    loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  # 
+block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                                            # set the optimizer used in this training part.  Note have to set a learning rate manualy as an adaptive one (eg Nadam) would wreck model weights in the first few passes before it reduced.  
+vgg16_2head.compile(optimizer = block5_optimiser, metrics=['accuracy'],                                  # recompile as we've changed which layers can be trained/ optimizer etc.  
+                    loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  
 
-if laptop:
-    plot_model(vgg16_2head, to_file='vgg16_2head.png', show_shapes = True, show_layer_names = True)
-
-#validate_temp = vgg16_2head.evaluate(X_validate, [Y_class_validate, Y_loc_validate], batch_size = 32, verbose = 1)
-
-# print('Forward pass of the testing data through the network:')
-# Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head.predict(X_test[:,:,:,:], verbose = 1)                                    # predict class labels 
-# for i in range(4):    
-#     plot_data_class_loc(X_test, np.random.randint(0,X_test.shape[0],15), classes = Y_class_test, classes_predicted = Y_class_test_cnn,
-#                                                                 locs = Y_loc_test, locs_predicted=Y_loc_test_cnn, source_names = source_names)
+try:
+    plot_model(vgg16_2head, to_file='vgg16_2head.png', show_shapes = True, show_layer_names = True)      # try to make a graphviz style image showing the complete model 
+except:
+    print(f"Failed to create a .png of the model, but continuing anyway.  ")                               # this can easily fail, however, so simply alert the user and continue.  
 
 
-
-#% Fine tune the final (5th) convolutional block
-
-print('\n\nTraining the 5th convolutional block.')
+print('\n\nFine-tuning the 5th convolutional block and the fully connected network.')
 vgg16_2head, metrics_class_5th, metrics_localisation_5th, metrics_combined_loss_5th = train_double_network(vgg16_2head, data_files_train,
                                                                                                            n_epochs_block5, ['class_dense3_loss', 'loc_dense6_loss'],
                                                                                                            X_validate, Y_class_validate, Y_loc_validate, len(synthetic_ifgs_settings['defo_sources']))
@@ -443,24 +399,22 @@ custom_training_history(metrics_localisation_5th, n_epochs_block5, title = '5th 
 
 vgg16_2head.save(f'step_07_train_full_model/01_vgg16_2head_block5_trained.h5')
 np.savez(f'step_07_train_full_model/training_history.npz', metrics_class_fc = metrics_class_fc,
-                                                     metrics_localisation_fc = metrics_localisation_fc,
-                                                     metrics_combined_loss_fc = metrics_combined_loss_fc,
-                                                     metrics_class_5th = metrics_class_5th,
-                                                     metrics_localisation_5th = metrics_localisation_5th,
-                                                     metrics_combined_loss_5th = metrics_combined_loss_5th)
+                                                         metrics_localisation_fc = metrics_localisation_fc,
+                                                         metrics_combined_loss_fc = metrics_combined_loss_fc,
+                                                         metrics_class_5th = metrics_class_5th,
+                                                         metrics_localisation_5th = metrics_localisation_5th,
+                                                         metrics_combined_loss_5th = metrics_combined_loss_5th)
 
 
 
 
-#%% 8: Test with synthetic and real data
+#%% Step 08: Test with synthetic and real data
 
-print('Forward pass of the testing data through the network:')
+print('\n\nStep 08: Forward pass of the testing data through the network:')
 
 Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head.predict(X_test[:,:,:,:], verbose = 1)                                    # predict class labels
- 
-for i in range(4):    
-    plot_data_class_loc(X_test, np.random.randint(0,X_test.shape[0],15), classes = Y_class_test, classes_predicted = Y_class_test_cnn,
-                                                                locs = Y_loc_test, locs_predicted=Y_loc_test_cnn, source_names = source_names)
 
 
-
+plot_data_class_loc_caller(X_test, classes = Y_class_test, classes_predicted = Y_class_test_cnn,                    # plot all the testing data
+                           locs = Y_loc_test, locs_predicted = Y_loc_test_cnn, 
+                           source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Testing data (after step 07)')

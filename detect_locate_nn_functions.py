@@ -8,6 +8,91 @@ Created on Wed Oct 28 15:14:07 2020
 
 #%%
 
+
+def open_VolcNet_file(file_path, defo_sources):
+    """A file to open a single VolcNet file and extrast the deformation source into a one hot encoded numpy array, 
+    and the deforamtion location as a n_ifg x 4 array.  
+    Ifgs are masked arrays, in m, with up as positive.  
+    
+    Inputs:
+        file_path | string or Path | path to fie
+        defo_sources | list of strings | names of deformation sources, should the same as the names used in VolcNet
+    
+    Returns:
+        X | r4 masked array | ifgs, as above. ? x y x x n_channels  
+        Y_class | r2 array | class labels, ? x n_classes
+        Y_loc | r2 array | locations of signals, ? x 4 (as x,y, width, heigh)
+    
+    History:
+        2020_01_11 | MEG | Written
+    """
+    import pickle
+    import numpy as np
+    import numpy.ma as ma
+    
+    # 0: Open the file    
+    with open(file_path, 'rb') as f:                                                      # open the real data file
+        ifgs = pickle.load(f)                                                                # this is a masked array of ifgs
+        ifgs_dates = pickle.load(f)                                                          # list of strings, YYYYMMDD that ifgs span
+        pixel_lons = pickle.load(f)                                                          # numpy array of lons of lower left pixel of ifgs
+        pixel_lats = pickle.load(f)                                                          # numpy array of lats of lower left pixel of ifgs
+        all_labels = pickle.load(f)                                                          # list of dicts of labels associated with the data.  e.g. deformation type etc.  
+    f.close()        
+    
+    # 1: Initiate arrays
+    n_ifgs = ifgs.shape[0]                                                                      # get number of ifgs in file
+    X = ifgs                                                                                    # soft copy to rename
+    Y_class = np.zeros((n_ifgs, len(defo_sources)))                                             # initiate
+    Y_loc = np.zeros((n_ifgs, 4))                                                               # initaite
+
+    # 2: Convert the deformation classes to a one hot encoded array and the locations to an array
+    for n_ifg in range(n_ifgs):                                                                 # loop through the ifgs
+        current_defo_source = all_labels[n_ifg]['deformation_source']                           # get the current ifgs deformation type/class label
+        arg_n = defo_sources.index(current_defo_source)                                         # get which number in the defo_sources list this is
+        Y_class[n_ifg, arg_n] = 1                                                               # write it into the correct position to make a one hot encoded list.  
+        Y_loc[n_ifg, :] = all_labels[n_ifg]['deformation_location']                             # get the location of deformation.  
+        
+    return X, Y_class, Y_loc
+
+#%%
+
+
+def define_two_head_model(model_input, n_class_outputs = 3):
+    """ Define the two headed model that we have designed to performed classification and localisation.  
+    Inputs:
+        model_input | tensorflow.python.framework.ops.Tensor | The shape of the tensor that will be input to our model.  Usually the output of VGG16 (?x7x7x512)  Nb ? = batch size.  
+        n_class_output | int | For a one hot encoding style output, there must be as many neurons as classes
+    Returns:
+        output_class |tensorflow.python.framework.ops.Tensor | The shape of the tensor output by the classifiction head.  Usually ?x3
+        output_loc | tensorflow.python.framework.ops.Tensor | The shape of the tensor output by the localisation head.  Usually ?x4
+    History:
+        2020_11_11 | MEG | Written
+    """
+    from keras.layers import Dense, Dropout, Flatten
+    
+    vgg16_block_1to5_flat = Flatten(name = 'vgg16_block_1to5_flat')(model_input)                              # flatten the model input (ie deep representation turned into a column vector)
+
+    # 1: the clasification head
+    x = Dropout(0.2, name='class_dropout1')(vgg16_block_1to5_flat)
+    x = Dense(256, activation='relu', name='class_dense1')(x)                                                 # add a fully connected layer
+    x = Dropout(0.2, name='class_dropout2')(x)
+    x = Dense(128, activation='relu', name='class_dense2')(x)                                                 # add a fully connected layer
+    output_class = Dense(n_class_outputs, activation='softmax',  name = 'class_dense3')(x)                  # and an ouput layer with 7 outputs (ie one per label)
+    
+    # 2: the localization head
+    x = Dense(2048, activation='relu', name='loc_dense1')(vgg16_block_1to5_flat)                                                 # add a fully connected layer
+    x = Dense(1024, activation='relu', name='loc_dense2')(x)                                                 # add a fully connected layer
+    x = Dense(1024, activation='relu', name='loc_dense3')(x)                                                 # add a fully connected layer
+    x = Dropout(0.2, name='loc_dropout1')(x)
+    x = Dense(512, activation='relu', name='loc_dense4')(x)                                                 # add a fully connected layer
+    x = Dense(128, activation='relu', name='loc_dense5')(x)                                                 # add a fully connected layer
+    output_loc = Dense(4, name='loc_dense6')(x)        
+    
+    return output_class, output_loc
+    
+
+#%%
+
 def train_double_network(model, files, n_epochs, loss_names,
                                     X_validate, Y_class_validate, Y_loc_validate, n_classes):
     """Train a double headed model using training data stored in separate files.  
@@ -155,6 +240,7 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
         .npz files in step_04_merged_rescaled_data
     History:
         2020_10_29 | MEG | Written
+        2021_01_06 | MEG | Fix bug in that mixed but not rescaled data was being written to the numpy arrays.  
 
     """
     import pickle
@@ -218,17 +304,14 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
         out_file += 1                                                                                                                                                   # and after saving again, update again.  
         print('Done.  ')
         
-        # data_channel_checker(X, window_title = 'Merged')
-        # data_channel_checker(X_real, window_title = 'X_real')
-        # data_channel_checker(X_synth, window_title = 'X_synth')
-        # data_channel_checker(X_rescale, window_title = 'X_rescale')
         
 
 #%%
 
 def custom_range_for_CNN(r4_array, min_max, mean_centre = False):
     """ Rescale a rank 4 array so that each channel's image lies in custom range
-    e.g. input with range of (-5, 15) is rescaled to (-125 125) or (-1 1) for use with VGG16 
+    e.g. input with range of (-5, 15) is rescaled to (-125 125) or (-1 1) for use with VGG16.  
+    Designed for use with masked arrays.  
     Inputs:
         r4_array | r4 masked array | works with masked arrays?  
         min_max | dict | 'min' and 'max' of range desired as a dictionary.  
@@ -239,6 +322,7 @@ def custom_range_for_CNN(r4_array, min_max, mean_centre = False):
         2019/03/20 | now includes mean centering so doesn't stretch data to custom range.  
                     Instead only stretches until either min or max touches, whilst mean is kept at 0
         2020/11/02 | MEG | Update so range can have a min and max, and not just a range
+        2021/01/06 | MEG | Upate to work with masked arrays.  Not test with normal arrays.
     """
     import numpy as np
     import numpy.ma as ma
@@ -298,59 +382,95 @@ def augment_data(X, Y_class, Y_loc, n_data = 500):
     History:
         2019/??/?? | MEG | Written
         2020/10/29 | MEG | Write the docs.  
+        2020_01_11 | MEG | Major rewrite to speed things up.  
     """
     import numpy as np
     import numpy.ma as ma
-    
-    
-    # do all possible fips - now have 4x as much data
-    flips = ['up_down', 'left_right', 'both']                                       # the three possible types of flip
-    X_aug = [X]                                                                     # make the original data an entry in a list
-    Y_loc_aug = [Y_loc]                                                             # ditto
-    for flip in flips:
-        X_temp, Y_loc_temp = augment_flip(X, Y_loc, flip)                           # do the augmentaiton via one of the flips.  
-        X_aug.append(X_temp)                                                        # append to the lis of data
-        Y_loc_aug.append(Y_loc_temp)                                                # also append the new locations (as they change with flips)
-    X_aug = ma.vstack(X_aug)                                                        # convert from a list back to one big array (ie stack along the first axis).  If we had n data, we now have 4n
-    Y_loc_aug = np.vstack(Y_loc_aug)                                                # and for locations
-    Y_class_aug = np.tile(Y_class, (4,1))                                           # classes don't change with flips etc. so can just be repeated.  
-        
-    # rotate
-    X_aug = [X_aug]                                                                # convert back to an entry in a list
-    Y_loc_aug = [Y_loc_aug]                                                        # same for locations
-    for random_rotate in range(3):                                                 # 4n data will again become 16n data, as we will do 3 sets of rotations and keep the originals.  
-        X_temp, Y_loc_temp = augment_rotate(X_aug[0], Y_loc_aug[0])                # rotate 4n data to make another 4n of data
-        X_aug.append(X_temp)
-        Y_loc_aug.append(Y_loc_temp)
-    X_aug = ma.vstack(X_aug)                                                       # 4 entries of 4n data are converted to 16n data
-    Y_loc_aug = np.vstack(Y_loc_aug)                                               # same for locations
-    Y_class_aug = np.tile(Y_class_aug, (4,1))                                      # classes don't change so can just be copied
 
-    # translate
-    X_aug = [X_aug]                                                                # now have 16n data, which becomes first item in list
-    Y_loc_aug = [Y_loc_aug]
-    for random_translate in range(3):                                              # 16n data will again become 64n data, as we will do 3 sets of translations and keep the originals.  
-        X_temp, Y_loc_temp = augment_translate(X_aug[0],  Y_loc_aug[0], max_translate = (20,20)) 
-        X_aug.append(X_temp)
-        Y_loc_aug.append(Y_loc_temp)
-    X_aug = ma.vstack(X_aug)                                                        # 4 entries of 16n data are converted to 64n data
-    Y_loc_aug = np.vstack(Y_loc_aug)
-    Y_class_aug = np.tile(Y_class_aug, (4,1))    
+    flips = ['none', 'up_down', 'left_right', 'both']                                       # the three possible types of flip
+
+    # 0: get the correct nunber of data    
+    n_ifgs = X.shape[0]
+    data_dict = {'X'       : X,                                                      # package the data and labels together into a dict
+                 'Y_class' : Y_class,
+                 'Y_loc'   : Y_loc}
+    
+    if n_ifgs < n_data:                                                                                 # if we have fewer ifgs than we need, repeat them  
+        n_repeat = int(np.ceil(n_data / n_ifgs))                                                        # get the number of repeats needed (round up and make an int)
+        data_dict['X'] = ma.repeat(data_dict['X'], axis = 0, repeats = n_repeat)
+        data_dict['Y_class'] = np.repeat(data_dict['Y_class'], axis = 0, repeats = n_repeat)
+        data_dict['Y_loc'] = np.repeat(data_dict['Y_loc'], axis = 0, repeats = n_repeat)
+    
+    data_dict = shuffle_arrays(data_dict)                                                       # shuffle (so that these aren't in the order of the class labels)    
+    for key in data_dict:                                                                       # then crop them to the correct number
+        data_dict[key] = data_dict[key][:n_data,]
+                
+    X_aug = data_dict['X']                                                      # and unpack as this function doesn't use dictionaries
+    Y_class_aug = data_dict['Y_class']
+    Y_loc_aug = data_dict['Y_loc']
+
+    # 1: do the flips        
+    for data_n in range(n_data):
+        flip = flips[np.random.randint(0, len(flips))]                                                       # choose a flip at random
+        if flip != 'none':
+            X_aug[data_n:data_n+1,], Y_loc_aug[data_n:data_n+1,] = augment_flip(X_aug[data_n:data_n+1,], Y_loc_aug[data_n:data_n+1,], flip)          # do the augmentaiton via one of the flips.  
+        
+    # 2: do the rotations
+    X_aug, Y_loc_aug = augment_rotate(X_aug, Y_loc_aug)                # rotate 
+    
+    # 3: Do the translations
+    X_aug, Y_loc_aug = augment_translate(X_aug,  Y_loc_aug, max_translate = (20,20)) 
+        
+    return X_aug, Y_class_aug, Y_loc_aug                    # return, and select only the desired data.  
+    
+    # # do all possible fips - now have 4x as much data
+    
+    # X_aug = [X]                                                                     # make the original data an entry in a list
+    # Y_loc_aug = [Y_loc]                                                             # ditto
+    # for flip in flips:
+    #     X_temp, Y_loc_temp = augment_flip(X, Y_loc, flip)                           # do the augmentaiton via one of the flips.  
+    #     X_aug.append(X_temp)                                                        # append to the lis of data
+    #     Y_loc_aug.append(Y_loc_temp)                                                # also append the new locations (as they change with flips)
+    # X_aug = ma.vstack(X_aug)                                                        # convert from a list back to one big array (ie stack along the first axis).  If we had n data, we now have 4n
+    # Y_loc_aug = np.vstack(Y_loc_aug)                                                # and for locations
+    # Y_class_aug = np.tile(Y_class, (4,1))                                           # classes don't change with flips etc. so can just be repeated.  
+        
+    # # rotate
+    # X_aug = [X_aug]                                                                # convert back to an entry in a list
+    # Y_loc_aug = [Y_loc_aug]                                                        # same for locations
+    # for random_rotate in range(3):                                                 # 4n data will again become 16n data, as we will do 3 sets of rotations and keep the originals.  
+    #     X_temp, Y_loc_temp = augment_rotate(X_aug[0], Y_loc_aug[0])                # rotate 4n data to make another 4n of data
+    #     X_aug.append(X_temp)
+    #     Y_loc_aug.append(Y_loc_temp)
+    # X_aug = ma.vstack(X_aug)                                                       # 4 entries of 4n data are converted to 16n data
+    # Y_loc_aug = np.vstack(Y_loc_aug)                                               # same for locations
+    # Y_class_aug = np.tile(Y_class_aug, (4,1))                                      # classes don't change so can just be copied
+
+    # # translate
+    # X_aug = [X_aug]                                                                # now have 16n data, which becomes first item in list
+    # Y_loc_aug = [Y_loc_aug]
+    # for random_translate in range(3):                                              # 16n data will again become 64n data, as we will do 3 sets of translations and keep the originals.  
+    #     X_temp, Y_loc_temp = augment_translate(X_aug[0],  Y_loc_aug[0], max_translate = (20,20)) 
+    #     X_aug.append(X_temp)
+    #     Y_loc_aug.append(Y_loc_temp)
+    # X_aug = ma.vstack(X_aug)                                                        # 4 entries of 16n data are converted to 64n data
+    # Y_loc_aug = np.vstack(Y_loc_aug)
+    # Y_class_aug = np.tile(Y_class_aug, (4,1))    
     
     
-    # shuffle along the first axis (otherwise with small values of n_data, we just get the first (and original) data back.  )
-    data_dict = {'X'       : X_aug,                                                      # package the data and labels together into a dict
-                 'Y_class' : Y_class_aug,
-                 'Y_loc'   : Y_loc_aug}
+    # # shuffle along the first axis (otherwise with small values of n_data, we just get the first (and original) data back.  )
+    # data_dict = {'X'       : X_aug,                                                      # package the data and labels together into a dict
+    #              'Y_class' : Y_class_aug,
+    #              'Y_loc'   : Y_loc_aug}
     
-    data_dict_shuffled = shuffle_arrays(data_dict)                                          # shuffle (so that these aren't in the order of the class labels)
+    # data_dict_shuffled = shuffle_arrays(data_dict)                                          # shuffle (so that these aren't in the order of the class labels)
     
-    X_aug = data_dict_shuffled['X']                                                      # and unpack as this function doesn't use dictionaries
-    Y_class_aug = data_dict_shuffled['Y_class']
-    Y_loc_aug = data_dict_shuffled['Y_loc']
+    # X_aug = data_dict_shuffled['X']                                                      # and unpack as this function doesn't use dictionaries
+    # Y_class_aug = data_dict_shuffled['Y_class']
+    # Y_loc_aug = data_dict_shuffled['Y_loc']
     
     
-    return X_aug[:n_data], Y_class_aug[:n_data], Y_loc_aug[:n_data]                     # return, and select only the desired data.  
+    
 
 #%%
 
@@ -388,6 +508,7 @@ def augment_flip(X, Y_loc, flip):
 
 def augment_rotate(X, Y_loc):
     """ Rotate data and the label.  Angles are random in range [0 360], and different for each sample.  
+    Note: Location labels aren't rotated!  Assumed to be roughly square.  
     Inputs:
         X | r4 array | samples x height x width x channels
         Y_loc | r2 array | samples X 4
