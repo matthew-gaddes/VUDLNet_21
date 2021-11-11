@@ -1,0 +1,10 @@
+name: vudl_net_21
+channels:
+  - defaults
+dependencies:
+  - spyder=4
+  - tensorflow=2.4.1
+  - pydot=1.4.1
+  - matplotlib=3.4.2
+
+
