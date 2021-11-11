@@ -22,11 +22,7 @@ from tensorflow.keras import losses, optimizers
 from tensorflow.keras.utils import plot_model
 
 
-# config = tf.ConfigProto()
-# config.gpu_options.allow_growth = True
-# sess = tf.Session(config=config)
-
-from vudlnet21.neural_net import train_double_network, define_two_head_model, file_list_divider, file_merger, open_VolcNet_file
+from vudlnet21.neural_net import define_two_head_model, file_list_divider, file_merger, numpy_files_sequence
 from vudlnet21.plotting import custom_training_history , plot_data_class_loc_caller
 
 #%% Things to set
@@ -39,12 +35,14 @@ synthetic_ifgs_settings = {'defo_sources' : ['dyke', 'sill', 'no_def']}         
                                                                                         # no settings here.  
     
 # step 06 (train the fully connected part of the network)
+batch_size_fc                     = 50                                              # as data files have 500 in them, this divides in cleanly (i.e. no half batches).  Not tested in case that it doesn't divide in cleanly, perhaps last batch is just smaller and faster?  
+fc_loss_weights                   = [0.05, 0.95]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+n_epochs_fc                       = 3                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 cnn_settings = {}
 cnn_settings['n_files_train']     = 70                                              # the number of files that will be used to train the network
 cnn_settings['n_files_validate']  = 5                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
 cnn_settings['n_files_test']      = 5                                               # the number of files held back for testing.  
-fc_loss_weights = [0.05, 0.95]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-n_epochs_fc = 10                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+
 
 # step 07 (fine-tune the 5th block and the fully connected part of the network):
 block5_loss_weights = [0.05, 0.95]                                                  # as per fc_loss_weights, but by changing these more emphasis can be placed on either the clasification or localisation loss.  
@@ -79,8 +77,9 @@ data_out_files = sorted(glob.glob(str(project_outdir / 'step_04_merged_rescaled_
 print('\nStep 06: Training the fully connected part of the CNN using the bottleneck features.')
 
 # 6.1 deal with files
-#data_files = sorted(glob.glob(str(project_outdir / 'step_04_merged_rescaled_data' / '*npz')), key = os.path.getmtime)                  # make list of data files
+
 bottleneck_files = sorted(glob.glob(str(project_outdir / 'step_05_bottleneck' / '*npz')), key = os.path.getmtime)                      # and make a list of bottleneck files (ie files that have been passed through the first 5 blocks of vgg16)
+
 
 if len(bottleneck_files) < (cnn_settings['n_files_train'] + cnn_settings['n_files_validate'] + cnn_settings['n_files_test']):
     raise Exception(f"There are {len(bottleneck_files)} data files, but {cnn_settings['n_files_train']} have been selected for training, "
@@ -88,13 +87,7 @@ if len(bottleneck_files) < (cnn_settings['n_files_train'] + cnn_settings['n_file
                     f"which sums to greater than the number of data files.  Perhaps adjust the number of files used for the training stages? "
                     f"For now, exiting.")
 
-#data_files_train, data_files_validate, data_files_test = file_list_divider(data_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])                              # divide the files into train, validate and test
 bottleneck_files_train, bottleneck_files_validate, bottleneck_files_test = file_list_divider(bottleneck_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])      # also divide the bottleneck files
-
-# X_validate, Y_class_validate, Y_loc_validate      = file_merger(data_files_validate)                             # Open all the validation data to RAM
-# X_validate_btln, Y_class_validate, Y_loc_validate = file_merger(bottleneck_files_validate)                       # Open the validation data bottleneck features to RAM
-# X_test, Y_class_test, Y_loc_test                  = file_merger(data_files_test)                                 # Open the test data to RAM
-# X_test_btln, Y_class_test_btln, Y_loc_test_btln   = file_merger(bottleneck_files_test)                           # Open the test data bottleneck features to RAM
 
 print(f"    There are {len(bottleneck_files)} data files.  {len(bottleneck_files_train)} will be used for training,"         # print to terminal status on how many files will be used etc.  
       f"{len(bottleneck_files_validate)} for validation, and {len(bottleneck_files_test)} for testing.  ")
@@ -117,11 +110,9 @@ vgg16_2head_fc.compile(optimizer = opt_used, loss=[loss_class, loss_loc],       
 
 ##################################################################################################################################### begin WIP
 
-# n_files = 100
-# print(f"TESTING WITH ONLY {n_files} FILES")
-# bottleneck_files_train = bottleneck_files_train[:n_files]
-
-
+n_files = 4
+print(f"TESTING WITH ONLY {n_files} FILES")
+bottleneck_files_train = bottleneck_files_train[:n_files]
 
 
 class CustomSaver(keras.callbacks.Callback):
@@ -130,96 +121,42 @@ class CustomSaver(keras.callbacks.Callback):
     and all the methods that it calls, without just copying the whole thing here.  """     
     
     def on_epoch_end(self, epoch, logs={}):                                                                 # overwrite the on_epoch_end default metho in the callback class.  
-        self.model.encoder.save(str(self.model_output_dir / f"encoder_epoch_{epoch:03d}"))                  # model_output_dir will have to have been set.  
-        self.model.decoder.save(str(self.model_output_dir / f"decoder_epoch_{epoch:03d}"))
+        from pathlib import Path
+        print(f"Saving the model at the end of epoch {epoch:03d}")
+        self.model.save(str(Path("02_full_size_example") / "step_06_train_fully_connected_model" / f"vgg16_2head_fc_epoch_{epoch:03d}"))                  # model_output_dir will have to have been set.  
 
-class numpy_files_sequence(tf.keras.utils.Sequence):                                                                                  # inheritance not tested like ths.  
-    
-    """must have:
-            __len__                             
-            __getitem__
-    If built correctly, it should guarantee that each sample is only used once per epoch.  
-    """
+class SaveBatchLoss(tf.keras.callbacks.Callback):
+    def on_train_batch_end(self, batch, logs=None):
+        batch_end_loss.append(logs['loss'])
+
+
+end_epoch_saver = CustomSaver()
         
-    def __init__(self, file_list, batch_size):                                          # constructor
-        """
-        Inputs:
-            file_list | list of strings or paths | locations of numpy files of data.  
-            batch_size | int | number of data for each batch.  Note tested if larger than the number of data in a single file.  
-        """
-        self.file_list = file_list
-        self.batch_size = batch_size
-
-    def __len__(self):                                                      # number of batches in an epoch
-        """As one large file (e.g. 1000 data) can't be used as a batch on a GPU (but maybe on a CPU?), we will break each 
-        file into n_batches_per_file.  Therefore, the total number of batches (per epoch) will be n_files x n_batches"""
-        
-        import numpy as np
-        n_files = len(self.file_list)                                                           # get the number of data files.  
-        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                              # get the number of data in a file (assumed to be the same for all files)
-        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))                    # the number of batches required to cover every data in the file.  
-        n_batches = n_files * n_batches_per_file
-        return n_batches
-
-    def __getitem__(self, idx):                                             # iterates over the data and returns a complete batch, index is a number upto the number of batches set by __len__, with each number being used once but in a random order.  
-        
-        import numpy as np
-        # repeat of __len__ to get info about batch sizes etc, probably a better way to do this.  
-        n_files = len(self.file_list)                                                      # get the number of data files.  
-        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                         # get the number of data in a file (assumed to be the same for all files)
-        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))               # the number of batches required to cover every data in the file.  
-        n_batches = n_files * n_batches_per_file
-        
-        # deal with files and batches (convert idx to a file number and batch number).  
-        n_file, n_batch = divmod(idx, n_batches_per_file)                                   # idx tells us which batch (of the total number of batches from __len__), but that needs mapping to a file, and to which batch in that file.  
-                                                                                            # divmod returns the quotient (file_n), and the remainder (batch from that file)
-        data = np.load(self.file_list[n_file])                                              # load the correct numpy file.  
-        X = data['X']                                                                       # eOpen the correct data file
-        Y_class = data['Y_class']
-        Y_loc = data['Y_loc']
-        
-        X_batch = X[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
-        Y_class = Y_class[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
-        Y_loc = Y_loc[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
-        
-        return X_batch, [Y_class, Y_loc]
-        
-        
-        # # Option 1: if it's the last batch, it's complex as we have to make sure it's the right size (e.g. with 50 data and batches of 32, the 2nd batch has only 50-32 = 18 data in it, so needs some duplication to avoid)
-        # if n_batch == (n_batches_per_file - 1):                                             # the last batch may not have enough data for it, so is more complex to prepare
-        #     X_unused = np.copy(X[n_batch * self.batch_size :, ])                            # get all the data not used in  batches so far, and make part of a batch with it
-        #     n_required = self.batch_size - X_unused.shape[0]                                # find out how short of a batch we are.  
-        #     extra_data_args = np.arange(n_batch * self.batch_size)                          # get the index of all the data that has been used in the previous batches.  
-        #     np.random.shuffle(extra_data_args)                                              # shuffle it
-        #     X_repeated = np.copy(X[extra_data_args[:n_required]], )                         # and make part of a batch with data that the network has already seen this epoch (ie repeated)
-        #     return np.concatenate((X_unused, X_repeated), axis = 0)                         # merge the data that make an incomplete batch with some of the repeated data to make the final batch the right size.  
-    
-        # else:
-            
-            
-    
-
-batch_size = 50                                             # 500 per file
-
-# vae_save = vae.CustomSaver()
-# vae_save.model_output_dir = model_output_dir
-
-train_generator = numpy_files_sequence(bottleneck_files_train, batch_size = 50)                                # data files have 500 in them by default, so choose a batch size that divides nicely (not tested if doesn't)
-validation_generator = numpy_files_sequence(bottleneck_files_validate, batch_size = 50)                                # data files have 500 in them by default, so choose a batch size that divides nicely (not tested if doesn't)
 
 
-#test1, test2 = train_generator.__getitem__(0)                                          # quick test of what batch 0 looks like
+train_generator = numpy_files_sequence(bottleneck_files_train, batch_size = batch_size_fc)                                # data files have 500 in them by default, so choose a batch size that divides nicely (not tested if doesn't)
+validation_generator = numpy_files_sequence(bottleneck_files_validate, batch_size = batch_size_fc)                                # data files have 500 in them by default, so choose a batch size that divides nicely (not tested if doesn't)
 
 
+batch_end_loss = []
 
-
-vgg16_2head_fc_history = vgg16_2head_fc.fit(train_generator, epochs = n_epochs_fc, validation_data = validation_generator)                 # train
+vgg16_2head_fc_history = vgg16_2head_fc.fit(train_generator, epochs = n_epochs_fc, validation_data = validation_generator,
+                                            callbacks = SaveBatchLoss())                 # train
 
 
 import sys; sys.exit()
 
 ############################################# end WIP
 
+
+# dump some old stuff incase needed below:
+    
+    #data_files = sorted(glob.glob(str(project_outdir / 'step_04_merged_rescaled_data' / '*npz')), key = os.path.getmtime)                  # make list of data files
+
+# X_test, Y_class_test, Y_loc_test                  = file_merger(data_files_test)                                 # Open the test data to RAM
+# X_test_btln, Y_class_test_btln, Y_loc_test_btln   = file_merger(bottleneck_files_test)                           # Open the test data bottleneck features to RAM
+#data_files_train, data_files_validate, data_files_test = file_list_divider(data_files, cnn_settings['n_files_train'], cnn_settings['n_files_validate'], cnn_settings['n_files_test'])                              # divide the files into train, validate and test    
+# end
 
 
 

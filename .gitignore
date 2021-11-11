@@ -1,4 +1,6 @@
 remake_synthetic_data.py
-ymls/*
-01_toy_example/*/*
+01_toy_example/step_01_dem_data/volcano_dems.pkl
+01_toy_example/step_06_train_fully_connected_model/*.h5
+01_toy_example/step_07_train_full_model/*.h5
+
 02_full_size_example/*/*

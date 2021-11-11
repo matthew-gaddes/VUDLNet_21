@@ -6,6 +6,63 @@ Created on Wed Oct 28 15:14:07 2020
 @author: matthew
 """
 
+
+#%%
+import tensorflow as tf
+
+class numpy_files_sequence(tf.keras.utils.Sequence):                                                                                  # inheritance not tested like ths.  
+    """A data generator for use with .npz files that contains X, Y_class, and Y_loc.  Can be used with either training, validation, or testing data.  
+    Key methods:
+            __len__                 to get the number of batches to pass all the data through (i.e. for one epoch)                        
+            __getitem__             to get a batch of data.  
+    If built correctly, it should guarantee that each sample is only used once per epoch.  
+    """
+        
+    def __init__(self, file_list, batch_size):                                          # constructor
+        """
+        Inputs:
+            file_list | list of strings or paths | locations of numpy files of data.  
+            batch_size | int | number of data for each batch.  Note tested if larger than the number of data in a single file.  
+        """
+        self.file_list = file_list
+        self.batch_size = batch_size
+
+    def __len__(self):                                                      # number of batches in an epoch
+        """As one large file (e.g. 1000 data) can't be used as a batch on a GPU (but maybe on a CPU?), we will break each 
+        file into n_batches_per_file.  Therefore, the total number of batches (per epoch) will be n_files x n_batches"""
+        
+        import numpy as np
+        n_files = len(self.file_list)                                                           # get the number of data files.  
+        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                              # get the number of data in a file (assumed to be the same for all files)
+        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))                    # the number of batches required to cover every data in the file.  
+        n_batches = n_files * n_batches_per_file
+        return n_batches
+
+    def __getitem__(self, idx):                                             # iterates over the data and returns a complete batch, index is a number upto the number of batches set by __len__, with each number being used once but in a random order.  
+        
+        import numpy as np
+        # repeat of __len__ to get info about batch sizes etc, probably a better way to do this.  
+        n_files = len(self.file_list)                                                      # get the number of data files.  
+        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                         # get the number of data in a file (assumed to be the same for all files)
+        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))               # the number of batches required to cover every data in the file.  
+        n_batches = n_files * n_batches_per_file
+        
+        # deal with files and batches (convert idx to a file number and batch number).  
+        n_file, n_batch = divmod(idx, n_batches_per_file)                                   # idx tells us which batch (of the total number of batches from __len__), but that needs mapping to a file, and to which batch in that file.  
+                                                                                            # divmod returns the quotient (file_n), and the remainder (batch from that file)
+        data = np.load(self.file_list[n_file])                                              # load the correct numpy file.  
+        X = data['X']                                                                       # eOpen the correct data file
+        Y_class = data['Y_class']
+        Y_loc = data['Y_loc']
+        
+        X_batch = X[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
+        Y_class = Y_class[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
+        Y_loc = Y_loc[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
+        
+        return X_batch, [Y_class, Y_loc]
+
+
+
 #%%
 
 
@@ -91,73 +148,7 @@ def define_two_head_model(model_input, n_class_outputs = 3):
     return output_class, output_loc
     
 
-#%%
 
-def train_double_network(model, files, n_epochs, loss_names,
-                                    X_validate, Y_class_validate, Y_loc_validate, n_classes):
-    """Train a double headed model using training data stored in separate files.  
-    Inputs:
-        model | keras model | the model to be trained
-        files | list | list of paths and filenames for the files used during training
-        n_epochs | int | number of epochs to train for
-        loss names | list | names of outputs of losses (e.g. "class_dense3_loss)
-    Returns
-        model | keras model | updated by the fit process
-        metrics_loss | r2 array | columns are: total loss/class loss/loc loss /validate total loss/validate class loss/ validate loc loss
-        metrics_class | r2 array | columns are class accuracy, validation class accuracy
-        
-    2019/03/25 | Written.  
-    """
-    import numpy as np
-    import tensorflow.keras as keras
-    
-    n_files_train = len(files)                                                              # get the number of training files
-    
-    metrics_class = np.zeros((n_files_train*n_epochs, 2))                                    # train class acuracy, valiate class accuracy
-    metrics_loss = np.zeros((n_files_train*n_epochs, 6))                                     # total loss/class loss/loc loss /validate total loss/validate class loss/ validate loc loss
-    
-    for e in range(n_epochs):                                                                        # loop through the number of epochs
-        for file_num, file in enumerate(files):                                   # for each epoch, loop through all files once
-        
-            data = np.load(file)
-            X_batch = data['X']
-            Y_batch_class = data['Y_class']
-            Y_batch_loc = data['Y_loc']
-            
-            if n_classes !=  Y_batch_class.shape[1]:
-                Y_batch_class = keras.utils.to_categorical(Y_batch_class, n_classes, dtype='float32')       # convert to one hot encoding (from class labels)
-                
-    
-            history_train_temp = model.fit(X_batch, [Y_batch_class, Y_batch_loc], batch_size=32, epochs=1, verbose = 0)
-             
-            metrics_loss[(e*n_files_train)+file_num, 0] = history_train_temp.history['loss'][0]                        # main los    
-            metrics_loss[(e*n_files_train)+file_num, 1] = history_train_temp.history[loss_names[0]][0]                 # class loss
-            metrics_loss[(e*n_files_train)+file_num, 2] = history_train_temp.history[loss_names[1]][0]                 # localization loss
-            metrics_class[(e*n_files_train)+file_num, 0] = history_train_temp.history['class_dense3_accuracy'][0]           # classification accuracy        
-            print(f'Epoch {e}, file {file_num}: Loss = {round(metrics_loss[(e*n_files_train)+file_num, 0],0)}, '
-                                       f'Class. loss = {round(metrics_loss[(e*n_files_train)+file_num, 1],2)}, '
-                                       f'Class. acc. = {round(metrics_class[(e*n_files_train)+file_num, 0],2)}, '
-                                         f'Loc. loss = {round(metrics_loss[(e*n_files_train)+file_num, 2],0)}')
-            
-            
-            
-            
-        # history_validate_temp = model.evaluate(X_validate, [Y_class_validate, Y_loc_validate], batch_size = 32, verbose = 1)
-        # metrics_loss[(e*n_files_train)+file_num, 3] = history_validate_temp[0]                                          # main loss
-        # metrics_loss[(e*n_files_train)+file_num, 4] = history_validate_temp[1]                                          # class loss
-        # metrics_loss[(e*n_files_train)+file_num, 5] = history_validate_temp[2]                                          # localisation loss
-        # metrics_class[(e*n_files_train)+file_num, 1] = history_validate_temp[3]                                         # classification  accuracy
-        # print(f'Epoch {e}, valid.: Loss = {round(metrics_loss[(e*n_files_train)+file_num, 3],0)}, '
-        #                   f'Class. loss = {round(metrics_loss[(e*n_files_train)+file_num, 4],2)}, '
-        #                   f'Class. acc. = {round(metrics_class[(e*n_files_train)+file_num, 1],2)}, '
-        #                     f'Loc. loss = {round(metrics_loss[(e*n_files_train)+file_num, 5],0)}')
-    
-
-    metrics_class = np.hstack((metrics_loss[:,1:2], metrics_loss[:,4:5], metrics_class ))                       # class loss, validate class loss, class accuracy, validate class accuracy
-    metrics_localisation = np.hstack((metrics_loss[:,2:3], metrics_loss[:,5:]))                                 # localisation loss, validate localisation loss, localisation accuracy, validate localisation accuracy
-    metrics_combined_loss = np.hstack((metrics_loss[:,1:2], metrics_loss[:,3:4]))                               # class accuracy, validate class accuracy
-    
-    return model, metrics_class, metrics_localisation, metrics_combined_loss
     
 
 
