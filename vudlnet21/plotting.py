@@ -8,56 +8,120 @@ Created on Wed Oct 21 11:47:45 2020
 
 #%%
 
-def custom_training_history(metrics, n_epochs, title = None):
-    """Plot training line graphs for loss and accuracy.  Loss on the left, accuracy on the right.  
-    Inputs
-        metrics | r2 array | (n_files * n_epochs) x 2 or 4 matrix,  train loss|validate loss | train accuracy|validate accuracy.  If no accuracy, only 2 columns
-        n_epochs | int | number of epochs model was trained for
-        title | string | title
+def plot_all_metrics(batch_metrics, epoch_metrics, metrics = None, title = 'Training metrics', two_column = False, out_path = None):
+    """ Given a dict of metrics for every batch and for every epoch, plot the combination of the two.  
+    
+    Inputs:
+        batch_metrics | dist of lists | names of metrics are keys and list of metrics values are items.  
+        epoch_metrics | dict of lists | standard metrics saved each epoch by Keras.  
+        metrics | None or list | names of metrics to plot (i.e. so we don't have to plot all fo them).  If None, just plot all.
+        title | string | figure and window title.  
+        two_column | boolean | If True, plots are in two columns.  
     Returns:
         Figure
+    History:
+        2021_11_11 | MEG | Written
+        
     """
+    
+    import matplotlib.pyplot as plt    
     import numpy as np
-    import matplotlib.pyplot as plt
+        
+    if metrics is None:                                             # if no specific metrics are requested
+        metrics = list(batch_metrics.keys())                        # just get them all from the batch metrics
     
-    if metrics.shape[1] == 4:           # detemrine if we have accuracy as well as loss
-        accuracy_flag = True
+    n_losses_total = len(batch_metrics[list(batch_metrics.keys())[0]])
+    n_epochs = len(epoch_metrics['loss'])
+    n_batches = int(n_losses_total / n_epochs)                       # get the number of entries in the first item of the batch_metrics (which is epochs x n_batches), then divided by epochs to get n_batches
+    n_metrics = len(metrics)
+    
+    if two_column == False:
+        fig1, axes = plt.subplots(n_metrics, 1, figsize = (18,8))                                           # many rows, one column
     else:
-        accuracy_flag = False
+        fig1, axes = plt.subplots(int(np.ceil(n_metrics/2)), 2, figsize = (18,10))                           # not tested, fewere rows, two columns
+    fig1.canvas.manager.set_window_title(title)
+    
+    xvals_batch = np.arange(0, n_losses_total)                                                # for every batch in every epoch
+    xvals_epoch = xvals_batch[::-1][::n_batches][::-1]
+    
+    
+    for plot_n, metric in enumerate(metrics):
+        ax = np.ravel(axes)[plot_n]                                                 # get the ax to plot on
+        ax.scatter(xvals_batch, batch_metrics[metric], c = 'k', marker = '.', alpha = 0.5)             # plot for each batch
+        ax.scatter(xvals_epoch, epoch_metrics[metric], c = 'r', marker = 'o')             # plot for each epoch, odd method to get x value for end of each epoch
         
-    
-    n_files = metrics.shape[0] / n_epochs
-    # Figure output
-    fig1, axes = plt.subplots(1,2)
-    fig1.canvas.set_window_title(title)
-    fig1.suptitle(title)
-    xvals = np.arange(0,metrics.shape[0])
-    validation_plot = np.ravel(np.argwhere(metrics[:,1] > 1e-10))                   # fewer validation data; find which ones to plot
-    
-    axes[0].plot(xvals, metrics[:,0], c = 'k')                                       # training loss
-    axes[0].plot(xvals[validation_plot], metrics[validation_plot,1], c = 'r')        # validation loss
-    axes[0].set_ylabel('Loss')
-    axes[0].legend(['train', 'validate'], loc='upper left')
-    axes[0].axhline(y=0, color='k', alpha=0.5)
-    
-    if accuracy_flag:
-        axes[1].plot(xvals, metrics[:,2], c = 'k')                                       # training accuracy
-        axes[1].plot(xvals[validation_plot], metrics[validation_plot,3], c = 'r')        # validation accuracy
-        axes[1].set_ylim([0,1])
-        axes[1].set_ylabel('Accuracy')
-        axes[1].yaxis.tick_right()
-        axes[1].legend(['train', 'validate'], loc='upper right')
+        ax.set_ylabel(metric)
+        ax.grid(True)
+        ax.set_ylim(bottom = 0)
+        ax.set_xlim(left = 0)
         
-    #
-    titles = ['Training loss', 'Training accuracy']
-    for i in range(2):
-        axes[i].set_title(titles[i])
-        axes[i].set_xticks(np.arange(0,metrics.shape[0],2*n_files))                 # change so a tick only after each epoch (and not each file)
-        axes[i].set_xticklabels(np.arange(0,n_epochs, 2))                                  # number ticks
-        axes[i].set_xlabel('Epoch number')
+        if 'accuracy' in metric:                                                              # if accuracy is used in the metric, assume it's an accuracy and therefore
+            ax.set_ylim(top = 1)                                                              # maxes out at 1
+            
+        ax.set_xticks(xvals_epoch)                                                            # change so a tick only after each epoch (and not each file)
+        ax.set_xticklabels(np.arange(0,n_epochs, 1))                                          # number ticks
+        ax.set_xlabel('Epoch number')
+    
+    #import pdb; pdb.set_trace()
+    if two_column and (not (n_metrics/2).is_integer()):                                        # if its two column and we didn't have an even number of metrics, delete the bottom right (left over one)
+        np.ravel(axes)[-1].set_visible(False)
+        
+    if out_path is not None:
+        fig1.savefig(out_path)                             # or with the title, if it's supplied 
 
-    if not accuracy_flag:
-        axes[1].set_visible(False)
+
+#%%
+
+# def custom_training_history(metrics, n_epochs, title = None):
+#     """Plot training line graphs for loss and accuracy.  Loss on the left, accuracy on the right.  
+#     Inputs
+#         metrics | r2 array | (n_files * n_epochs) x 2 or 4 matrix,  train loss|validate loss | train accuracy|validate accuracy.  If no accuracy, only 2 columns
+#         n_epochs | int | number of epochs model was trained for
+#         title | string | title
+#     Returns:
+#         Figure
+#     """
+#     import numpy as np
+#     import matplotlib.pyplot as plt
+    
+#     if metrics.shape[1] == 4:           # detemrine if we have accuracy as well as loss
+#         accuracy_flag = True
+#     else:
+#         accuracy_flag = False
+        
+    
+#     n_files = metrics.shape[0] / n_epochs
+#     # Figure output
+#     fig1, axes = plt.subplots(1,2)
+#     fig1.canvas.set_window_title(title)
+#     fig1.suptitle(title)
+#     xvals = np.arange(0,metrics.shape[0])
+#     validation_plot = np.ravel(np.argwhere(metrics[:,1] > 1e-10))                   # fewer validation data; find which ones to plot
+    
+#     axes[0].plot(xvals, metrics[:,0], c = 'k')                                       # training loss
+#     axes[0].plot(xvals[validation_plot], metrics[validation_plot,1], c = 'r')        # validation loss
+#     axes[0].set_ylabel('Loss')
+#     axes[0].legend(['train', 'validate'], loc='upper left')
+#     axes[0].axhline(y=0, color='k', alpha=0.5)
+    
+#     if accuracy_flag:
+#         axes[1].plot(xvals, metrics[:,2], c = 'k')                                       # training accuracy
+#         axes[1].plot(xvals[validation_plot], metrics[validation_plot,3], c = 'r')        # validation accuracy
+#         axes[1].set_ylim([0,1])
+#         axes[1].set_ylabel('Accuracy')
+#         axes[1].yaxis.tick_right()
+#         axes[1].legend(['train', 'validate'], loc='upper right')
+        
+#     #
+#     titles = ['Training loss', 'Training accuracy']
+#     for i in range(2):
+#         axes[i].set_title(titles[i])
+#         axes[i].set_xticks(np.arange(0,metrics.shape[0],2*n_files))                 # change so a tick only after each epoch (and not each file)
+#         axes[i].set_xticklabels(np.arange(0,n_epochs, 2))                                  # number ticks
+#         axes[i].set_xlabel('Epoch number')
+
+#     if not accuracy_flag:
+#         axes[1].set_visible(False)
 
 
 

@@ -6,33 +6,6 @@
 """
 
 
-def open_smithsonian_csv_file(smithsonian_csv_file, side_length = 40e3):
-    """ Conver the csv file to a list of python dictionaries
-    Inputs:
-        smithsonian_csv_file | string | path to volcano csv file
-        side_length | int | the side length of the DEM in metres.  e.g. 40000m = 40km
-    Returns:
-        volcanoes | list | one entry for each volcano, each entry is a dictionary of info about that volcano (name string and lonlat tuple)
-    History:
-        2020/07/29 | MEG | Written    
-        2020/10/19 | MEG | Add option to set side length
-    """
-    import csv  
-    with open(smithsonian_csv_file, 'r', encoding = "ISO-8859-1") as f:                             # open the csv file
-      reader = csv.reader(f)
-      volc_list = list(reader)                                          # list where each item is a row of the file?
-    volcanoes = []
-    for volc in volc_list:
-        volc_dict = {}
-        volc_dict['name'] = volc[0]
-        volc_dict['centre'] = (float(volc[2]), float(volc[1]))
-        volc_dict['side_length'] =  (side_length, side_length)
-        volcanoes.append(volc_dict)
-    return volcanoes
-
-
-
-
 import numpy as np
 import numpy.ma as ma 
 import pickle
@@ -41,8 +14,6 @@ import glob
 import os
 from pathlib import Path
 import shutil
-
-
 
 
 
@@ -81,8 +52,13 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
                            'turb_aps_length'        : 5000}                                     # turbulent APS will be correlated on this length scale, in metres.  
 
 #step 03 (load real data and augment):
-VolcNet_path = Path('/home/matthew/university_work/15_my_software_releases/VolcNet-1.0')
-real_ifg_settings       = {'augmentation_factor' : 89}                                           # factor to augment by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
+volcnet_dir             = Path('/home/matthew/university_work/02_neural_network_python/08_VolcNet_copy/')
+volcnet_version         = 'v1'
+real_ifg_settings       = {'augmentation_factor' : 116}                                           # factor to augment by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.
+                                                                                                   # v1 data has 173 ifgs, so 173 * 116  20068 ~ 20,000 ~ 40 files of 500 data
+# volcnet_version         = 'v2'
+# real_ifg_settings       = {'augmentation_factor' : 89}                                           # factor to augment by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.  
+                                                                                                    # v2 data has ? ifgs, so ? x 89 ~ 20000 etc.  
 
 # step 04 (merge synthetic and real, and rescale to desired range)
 cnn_settings = {'input_range'       : {'min':-1, 'max':1}}
@@ -98,8 +74,10 @@ sys.path.append(dependency_paths['srtm_dem_tools_bin'])
 from dem_tools_lib import SRTM_dem_make_batch                                       # From SRTM dem tools
 from random_generation_functions import create_random_synthetic_ifgs                # From SyInterferoPy
 
-from vudlnet21.neural_net import augment_data, choose_for_augmentation, merge_and_rescale_data, train_double_network, define_two_head_model, file_list_divider, file_merger, open_VolcNet_file
-from vudlnet21.plotting import plot_data_class_loc_caller, open_datafile_and_plot, custom_training_history                                
+from vudlnet21.file_handling import open_smithsonian_csv_file, open_all_volcnet_files
+from vudlnet21.neural_net import augment_data, choose_for_augmentation, merge_and_rescale_data, define_two_head_model, file_list_divider, file_merger
+from vudlnet21.plotting import plot_data_class_loc_caller, open_datafile_and_plot
+
 
 
 
@@ -180,22 +158,19 @@ open_datafile_and_plot(project_outdir / "step_02_synthetic_data" / "data_file_00
 print("\nStep 03: Loading and augmenting the real interferograms from VolcNet.  ")
 print("    Starting to open the real data....", end = '')
 
-VolcNet_files = sorted(glob.glob(str(VolcNet_path / '*.pkl')))             #  get a list of the paths to all the VolcNet files       
-if len(VolcNet_files) == 0:
-    raise Exception('No VolcNet files have been found.  Perhaps the path is wrong? Or perhaps you only want to use synthetic data?  In which case, this section can be removed.  Exiting...')
+if volcnet_version == 'v1':
+    with open(volcnet_dir / "v1_manually_split" / "training_data.pkl", 'rb') as f:                     # open only the train data
+        data_dict = pickle.load(f)                                                                     # 
+    X = data_dict['X_m']                                                                                # this is a masked array of ifgs, units are metres
+    Y_class = data_dict['Y_class']
+    Y_loc = data_dict['Y_loc']
 
-X_1s = []
-Y_class_1s = []
-Y_loc_1s = []
-for VolcNet_file in VolcNet_files:
-    X_1, Y_class_1, Y_loc_1 = open_VolcNet_file(VolcNet_file, synthetic_ifgs_settings['defo_sources'])
-    X_1s.append(X_1)
-    Y_class_1s.append(Y_class_1)
-    Y_loc_1s.append(Y_loc_1)
-X = ma.concatenate(X_1s, axis = 0)
-Y_class = np.concatenate(Y_class_1s, axis = 0)
-Y_loc = np.concatenate(Y_loc_1s, axis = 0)
-del X_1s, Y_class_1s, Y_loc_1s, X_1, Y_class_1, Y_loc_1
+elif volcnet_version == 'v2':
+    X, Y_class, Y_loc = open_all_volcnet_files(volcnet_dir / "v2_all_data", synthetic_ifgs_settings['defo_sources'])
+else:
+    raise Exception("There are currently only versions 'v1' and 'v2' of volcnet, but you have requested {volcnet_version} so exiting.  ")
+
+
 plot_data_class_loc_caller(X[:30,], Y_class[:30,], Y_loc[:30,], source_names = ['dyke', 'sill', 'no def'], window_title = '02 Sample of Real data')         # plot the data in it (note that this can be across multiople windows)        
 print('Done.  ')
 
@@ -242,8 +217,6 @@ open_datafile_and_plot(project_outdir / "step_03_real_data" / "augmented" / "dat
 
 
 #%% 4: Merge real and synthetic data, and rescale to desired range (e.g. [0, 1], [0, 255], [-125, 125] etc)
-
-
 
 print("\nStep 04: Mergring the real and synthetic interferograms and rescaling to CNNs input range.")
 

@@ -4,3 +4,4 @@ remake_synthetic_data.py
 01_toy_example/step_07_train_full_model/*.h5
 
 02_full_size_example/*/*
+old_runs/*
