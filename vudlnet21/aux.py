@@ -9,6 +9,33 @@ Created on Thu Jul 30 12:43:13 2020
 
 
 
+#%%
+
+def shuffle_arrays(data_dict):
+    """A function to shuffle a selection of arrays along their first axis.  
+    The arrays are all shuffled in the same way (so good for data and labels)
+    Inputs:
+        data_dict | dictionary | containing e.g. X, X_m, Y_class, Y_loc
+    Returns:
+        data_dict_shuffled | dictionary | containing e.g. X, X_m, Y_class, Y_loc, shuffled along first axis
+    History:
+        2019/??/?? | MEG | Written
+        2020/10/28 | MEG | Comment.  
+            
+    """
+    import numpy as np
+    import numpy.ma as ma
+    
+    data_dict_shuffled = {}                                                         # initiate
+    args = np.arange(0, data_dict['X'].shape[0])                                    # get the numbers along the first dim (which is the number of data)
+    np.random.shuffle(args)                                                         # shuffle this
+    
+    for data_label_name in data_dict:                                               # loop through each array in dictionary 
+        data_dict_shuffled[data_label_name] = data_dict[data_label_name][args,:]    # and then copy to the new dict in the shuffled order (set by args)
+        
+    return data_dict_shuffled
+
+
 
 
 #%%
@@ -105,7 +132,7 @@ def remappedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
         cdict['blue'].append((si, b, b))
         cdict['alpha'].append((si, a, a))
     newcmap = matplotlib.colors.LinearSegmentedColormap(name, cdict)
-    plt.register_cmap(cmap=newcmap)
+    #plt.register_cmap(cmap=newcmap)
     return newcmap
 
 

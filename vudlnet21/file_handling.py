@@ -6,6 +6,74 @@ Created on Mon Nov 15 16:28:33 2021
 @author: matthew
 """
 
+#%%
+
+
+def file_merger(files): 
+    """Given a list of files, open them and merge into one array.  
+    Inputs:
+        files | list | list of paths to the .npz files
+    Returns
+        X | r4 array | data
+        Y_class | r2 array | class labels, ? x n_classes
+        Y_loc | r2 array | locations of signals, ? x 4 (as x,y, width, heigh)
+    History:
+        2020/10/?? | MEG | Written
+        2020/11/11 | MEG | Update to remove various input arguments
+    
+    """
+    import numpy as np
+    
+    def open_synthetic_data_npz(name_with_path):
+        """Open a file data file """  
+        data = np.load(name_with_path)
+        X = data['X']
+        Y_class = data['Y_class']
+        Y_loc = data['Y_loc']
+        return X, Y_class, Y_loc
+
+    n_files = len(files)
+    
+    for i, file in enumerate(files):
+        X_batch, Y_class_batch, Y_loc_batch = open_synthetic_data_npz(file)
+        if i == 0:
+            n_data_per_file = X_batch.shape[0]
+            X = np.zeros((n_data_per_file * n_files, X_batch.shape[1], X_batch.shape[2], X_batch.shape[3]))      # initate array, rank4 for image, get the size from the first file
+            Y_class = np.zeros((n_data_per_file  * n_files, Y_class_batch.shape[1]))                              # should be flexible with class labels or one hot encoding
+            Y_loc = np.zeros((n_data_per_file * n_files, 4))                                                     # four columns for bounding box
+            
+        
+        X[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:,:,:] = X_batch
+        Y_class[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:] = Y_class_batch
+        Y_loc[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:] = Y_loc_batch
+    
+    return X, Y_class, Y_loc 
+
+#%%
+
+def file_list_divider(file_list, n_files_train, n_files_validate, n_files_test):
+    """ Given a list of files, divide it up into training, validating, and testing lists.  
+    Inputs
+        file_list | list | list of files
+        n_files_train | int | Number of files to be used for training
+        n_files_validate | int | Number of files to be used for validation (during training)
+        n_files_test | int | Number of files to be used for testing
+    Returns:
+        file_list_train | list | list of training files
+        file_list_validate | list | list of validation files
+        file_list_test | list | list of testing files
+    History:
+        2019/??/?? | MEG | Written
+        2020/11/02 | MEG | Write docs
+        """
+    file_list_train = file_list[:n_files_train]
+    file_list_validate = file_list[n_files_train:(n_files_train+n_files_validate)]
+    file_list_test = file_list[(n_files_train+n_files_validate) : (n_files_train+n_files_validate+n_files_test)]
+    return file_list_train, file_list_validate, file_list_test
+
+
+#%%
+
 def open_smithsonian_csv_file(smithsonian_csv_file, side_length = 40e3):
     """ Conver the csv file to a list of python dictionaries
     Inputs:

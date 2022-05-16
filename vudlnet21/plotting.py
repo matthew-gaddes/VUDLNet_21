@@ -6,6 +6,8 @@ Created on Wed Oct 21 11:47:45 2020
 @author: matthew
 """
 
+import pdb
+
 #%%
 
 def plot_all_metrics(batch_metrics, epoch_metrics, metrics = None, title = 'Training metrics', two_column = False, out_path = None):
@@ -171,6 +173,7 @@ def open_datafile_and_plot(file_path, n_data = 15, rad_to_m_convert = False,
     if rad_to_m_convert:
         X = X *(s1_wav / (4 * np.pi))                                                                                              # convert from unwrapped phase to metres (for Sentinel-1)
         
+        
     plot_data_class_loc_caller(X[:n_data,], Y_class[:n_data,], Y_loc[:n_data,], source_names = ['dyke', 'sill', 'no def'],
                                window_title = window_title)    
 
@@ -247,7 +250,8 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
     f1, axes = plt.subplots(n_rows, n_cols, figsize = figsize)
     if window_title is not None:
         f1.canvas.set_window_title(window_title)
-    for n_plot in range(n_plots):                                           # loop through each plot arg
+        
+    for n_plot in range(n_plots):                                           # loop through each plot arg (that is the number of ifgs to plot)
         axe = np.ravel(axes)[n_plot]                                        # convert axes to a rank 1 so that it's easy to index them as we loop through the plots
         
         #1: Draw the ifg (each ifg has its own colourscale)
@@ -304,6 +308,8 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
             axes_to_del = np.ravel(axes)[(n_plots):]
             for axe_to_del in axes_to_del:
                 axe_to_del.set_visible(False)
+                
+    #pdb.set_trace()
 
             
 #%%
