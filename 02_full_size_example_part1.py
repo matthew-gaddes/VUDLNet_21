@@ -224,7 +224,69 @@ open_datafile_and_plot(project_outdir / "step_02_synthetic_data" / "data_file_00
 
 
 
-#%%  Compute the deformation labels.  
+#%%  4: Compute the deformation labels.  
+
+print(f"\nStep 03: Creating labels for all possible VolcNet data.  ")
+
+
+volcnet_files = sorted(glob.glob(dependency_paths['volcnet'] +  '/*.pkl'))            # get the paths to the volcnet file.  
+file_n = 0
+data_n = 0
+
+data_indexs = {}                                                                                                                 # initialise
+
+
+for volcnet_file in volcnet_files:
+    
+    print(f"Opening file: {volcnet_file.split('/')[-1]}")
+    # 1: Open the file
+    with open(volcnet_file, 'rb') as f:
+        displacement_r3 = pickle.load(f)
+        tbaseline_info = pickle.load(f)
+        persistent_defs = pickle.load(f)
+        transient_defs = pickle.load(f)
+
+    n_acq, ny, nx = displacement_r3['cumulative'].shape
+    n_ifg = (n_acq*n_acq) - n_acq
+    print(f"The interferograms are of size: {displacement_r3['mask'].shape}")
+    
+    def_magnitudes = np.nan * np.zeros((n_acq, n_acq))
+    labels = np.nan * np.zeros((n_acq, n_acq))
+    
+    for acq_n1, acq_1 in enumerate(tbaseline_info['acq_dates']):                                                # 
+        for acq_n2, acq_2 in enumerate(tbaseline_info['acq_dates']):
+            if acq_1 == acq_2:                                                                                                          # will just be zeros so ignore.   
+                pass                                                                                                                      # just leave as nans          
+            else:
+                ifg = displacement_r3['cumulative'][acq_n2,] - displacement_r3['cumulative'][acq_n1,]                                    # make the ifg between the two acquisitions.  
+                def_predicted, sources, def_location = volcnet_labeller(f"{acq_1}_{acq_2}", persistent_defs, transient_defs)             # label the ifg, def_location is still in terms of lon and lat
+                if (np.abs(def_predicted) < def_min):
+                    def_magnitudes[acq_n1, acq_n2] = 0.
+                    labels[acq_n1, acq_n2] = 2                                                                                    # atmosphere only                          
+                else:
+                    def_magnitudes[acq_n1, acq_n2] = def_predicted
+                    if sources[0] == 'dyke':
+                        labels[acq_n1, acq_n2] = 0                                                                                    # atmosphere only                          
+                    elif sources[0] == 'sill':
+                        labels[acq_n1, acq_n2] = 1                                                                                    # atmosphere only                          
+    data_indexs[volcnet_file.split('/')[-1]] = (def_magnitudes, labels)
+                    
+
+sys.exit()
+
+#%% quick plot.  
+
+for key, value in data_indexs.items():
+    f, axes = plt.subplots(1,2, figsize = (16,8))
+    f.suptitle(key)
+    matrix_show(value[0], ax = axes[0], fig = f)
+    matrix_show(value[1], ax = axes[1], fig = f)
+    axes[0].set_title('def_magnitudes')
+    axes[1].set_title('labels')
+    axes[0].set_aspect('equal')
+    axes[1].set_aspect('equal')
+
+
 
 
 #%% 3: Load the real data (and augment).  Note that these are in metres, and use one hot encoding for the class, and are masked arrays (incoherence and water are masked)
