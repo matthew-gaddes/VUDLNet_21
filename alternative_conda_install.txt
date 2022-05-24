@@ -1,0 +1,4 @@
+conda  create -n SyInterferoPy -c conda-forge spyder							# spyder = 5.3.0 and spyder-kernels=2.3.0 works 
+conda install -c conda-forge numpy matplotlib scipy geopy shapely pyshp cartopy netcdf4 pip hdf5 h5py scikit-image=0.16.2 simpleklm
+
+pip install wget

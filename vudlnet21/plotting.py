@@ -173,9 +173,13 @@ def open_datafile_and_plot(file_path, n_data = 15, rad_to_m_convert = False,
     if rad_to_m_convert:
         X = X *(s1_wav / (4 * np.pi))                                                                                              # convert from unwrapped phase to metres (for Sentinel-1)
         
-        
+    
+    
+    
     plot_data_class_loc_caller(X[:n_data,], Y_class[:n_data,], Y_loc[:n_data,], source_names = ['dyke', 'sill', 'no def'],
                                window_title = window_title)    
+
+
 
 #%%
 
@@ -234,6 +238,8 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
         2020/10/28 | MEG | Update docs
     """    
     
+    
+    
     import matplotlib.pyplot as plt
     import matplotlib as mpl
     from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -251,8 +257,14 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
     if window_title is not None:
         f1.canvas.set_window_title(window_title)
         
+    
+    
     for n_plot in range(n_plots):                                           # loop through each plot arg (that is the number of ifgs to plot)
         axe = np.ravel(axes)[n_plot]                                        # convert axes to a rank 1 so that it's easy to index them as we loop through the plots
+        
+        
+        
+        
         
         #1: Draw the ifg (each ifg has its own colourscale)
         ifg_min = ma.min(data[plot_args[n_plot], :,:,0])                                                                   # min of ifg being plotted
@@ -271,18 +283,34 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
         else:
             cb2.ax.xaxis.set_ticks([np.round(ifg_min,3), np.round(0,0)])       
         
+        
+        
+        
         #3: Add labels/locations
         if locs is not None:
             start_stop_locs = centre_to_box(locs[plot_args[n_plot]])                                         # covert from centre width notation to start stop notation, # [x_start, x_stop, Y_start, Y_stop]
+            
+            
+            
             add_square_plot(start_stop_locs[0], start_stop_locs[1], 
                             start_stop_locs[2], start_stop_locs[3], axe, colour='k')     # box around deformation
+            
+            
+#            pdb.set_trace()    
+            
             axe.scatter(locs[plot_args[n_plot], 0], locs[plot_args[n_plot], 1], s = point_size, c = 'k')
             
+            
+        
+        
+        
         if locs_predicted is not None:
             start_stop_locs_pred = centre_to_box(locs_predicted[plot_args[n_plot]])                                         # covert from centre width notation to start stop notation, # [x_start, x_stop, Y_start, Y_stop]
             add_square_plot(start_stop_locs_pred[0], start_stop_locs_pred[1], 
                             start_stop_locs_pred[2], start_stop_locs_pred[3], axe, colour='r')     # box around deformation
             axe.scatter(locs_predicted[plot_args[n_plot], 0], locs_predicted[plot_args[n_plot], 1], s = point_size, c = 'r')
+        
+        
         
         if classes is not None and classes_predicted is None:                           # if only have labels and not predicted lables
             label = np.argmax(classes[plot_args[n_plot], :])                               # labels from the cnn
@@ -299,6 +327,7 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
             axe.set_title(f'Ifg: {plot_args[n_plot]}, Label: {source_names[label]}\nCNN label: {source_names[label_model]} ({value_model})', fontsize=label_fs)
         
         
+        
         axe.set_ylim(top = 0, bottom = data.shape[1])
         axe.set_xlim(left = 0, right= data.shape[2])
         axe.set_yticks([])
@@ -309,7 +338,7 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
             for axe_to_del in axes_to_del:
                 axe_to_del.set_visible(False)
                 
-    #pdb.set_trace()
+        
 
             
 #%%

@@ -6,6 +6,149 @@ Created on Wed May 11 11:30:31 2022
 @author: matthew
 """
 
+#%%
+
+
+
+def rescale_timeseries(displacement_r3, rescale_factor = 1.0):
+    """Given a time series as a dict in the usual form, rescale it by a given factor.  Not tested for downsampling.  
+    Inputs:
+        displacment_r3 | dict | cumulative, lons, lats, mask, dem.  
+        Rescale factor | float | factor to rescale by  
+    Returns:
+        displacment_r3_rescaled | dict | as above, but all rescaled.  
+    History:
+        2022_05_23 | MEG | Written.  
+    """
+    
+    import numpy as np
+    import numpy.ma as ma
+    from skimage.transform import rescale
+
+    #print(f"Rescaling the time series.  ")
+
+    n_acq = displacement_r3['cumulative'].shape[0]
+    displacement_r3_rescaled = {}
+    
+    mask = displacement_r3['cumulative'].mask[0,]                                                              # get a slice of the mask (as it's rank3, but we're using a time series with consistent pixels so it might as well be rank 2)
+    displacement_r3_rescaled['mask'] = rescale(mask, rescale_factor, order = 0)                                                   # order 0 as boolean so don't want any interpolate
+    try:
+        displacement_r3_rescaled['dem'] = rescale(displacement_r3['dem'], rescale_factor)                          # 
+    except:
+        pass
+    
+    for ifg_n, ifg in enumerate(displacement_r3['cumulative']):
+        ifg_rescaled = rescale(ifg, rescale_factor)
+        if ifg_n == 0:
+            displacement_r3_rescaled['cumulative'] = ma.zeros((n_acq, ifg_rescaled.shape[0],  ifg_rescaled.shape[1]))
+        displacement_r3_rescaled['cumulative'] [ifg_n,] = ma.array(ifg_rescaled, mask = displacement_r3_rescaled['mask'])
+        
+    _, ny_rescaled, nx_rescaled = displacement_r3_rescaled['cumulative'].shape
+    
+    lons_mg, lats_mg = np.meshgrid(np.linspace(displacement_r3['lons'][0,0], displacement_r3['lons'][0,-1], nx_rescaled),           # x 
+                                   np.linspace(displacement_r3['lats'][0,0], displacement_r3['lats'][-1,0], ny_rescaled))           # then y
+    
+    displacement_r3_rescaled['lons'] = lons_mg
+    displacement_r3_rescaled['lats'] = lats_mg
+    
+    return displacement_r3_rescaled
+        
+
+#%%
+
+def random_cropping(ifg, out_resolution = 224, def_loc = None):
+    """ Given an input ifg that is larger than the crop required, make 9 crops of the ifg to the new scale.  
+    If no labels (def_loc) are provided, then these are quasi random to sample top left/ middle left, bottom left etc (i.e.9)
+    If labels are provided, it's random so that all of the label is retained.  
+    
+    Inputs:
+        ifg | rank 2 masked array | interferogram.  
+        out_resolution | int | output side length (output is square)
+        def_loc | rank 2 array | closed polygon of deformation, x then y, in pixels.  e.g.:
+                                                                                            array([[168, 183],
+                                                                                                   [243, 183],
+                                                                                                   [243, 233],
+                                                                                                   [168, 233],
+                                                                                                   [168, 183]])
+                                                                                            
+    Returns:
+        ifg_cropped | rank 3 array | out_resolution x out_resolution x 9
+        Y_loc | rank 2 array | 9 x 4, x centre y centre x half width, y half width.  
+        
+    History:
+        2022_05_16 | MEG | Written
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import numpy.ma as ma
+    
+    bands = [0, 1/3, 2/3, 3/3]
+    
+    # # inputs sanity check
+    # f, ax = plt.subplots()
+    # ax.imshow(ifg)
+    # ax.plot(def_loc[:,0], def_loc[:,1])
+    
+    ifg_cropped = ma.zeros((out_resolution, out_resolution, 9))             # initialise
+    
+    #pdb.set_trace()                
+    
+    ny, nx = ifg.shape
+    y_padding = ny - out_resolution
+    x_padding = nx - out_resolution
+    
+    if def_loc is None:                                                                                                 # if no deformaiton label, cropping is easy as can take any part of the data.  
+        data_n = 0
+        for yband in np.arange(3):
+            for xband in np.arange(3):
+                y_start = np.random.randint(low = bands[yband] * y_padding , high = bands[yband + 1] * y_padding )
+                x_start = np.random.randint(low = bands[xband] * x_padding , high = bands[xband + 1] * x_padding )
+                ifg_cropped[:,:,data_n] = ifg[y_start: y_start + out_resolution, x_start: x_start + out_resolution]
+                data_n += 1
+        return ifg_cropped
+                
+    else:                                                                                                               # but, if we do have location information, cropping is harder, and completely random.  
+        Y_loc = np.zeros((9, 4))                                                                                        # initialise to store locations for each crop.  
+        def_x_start = np.min(def_loc[:,0])
+        def_x_stop = np.max(def_loc[:,0])
+        def_x_centre = int(np.mean([def_x_start, def_x_stop]))                                                          # 
+        def_x_half_width = (def_x_stop - def_x_start)/2                                                                 # this won't be changed by cropping
+        def_y_start = np.min(def_loc[:,1])
+        def_y_stop = np.max(def_loc[:,1])
+        def_y_centre = int(np.mean([def_y_start, def_y_stop]))                                              
+        def_y_half_width = (def_y_stop - def_y_start)/2                                                                 # also won't be changed by cropping
+        
+        x_low = def_x_stop - out_resolution                                         # the lowest that x can start at and the max x deformation still be in the image
+        if x_low < 0:
+            x_low = 0 
+        x_high = def_x_start
+        if x_high > (nx - out_resolution):
+            x_high = nx - out_resolution    
+        
+        
+        y_low = def_y_stop - out_resolution                                         # the lowest that x can start at and the max x deformation still be in the image
+        if y_low < 0:
+            y_low = 0 
+        y_high = def_y_start
+        if y_high > (ny - out_resolution):
+            y_high = ny - out_resolution
+        
+            
+        data_n = 0 
+        for i in range(9):
+            #pdb.set_trace()
+            x_start = np.random.randint(x_low, x_high)            # x_high is just the lowest value for the deformaiton.  
+            y_start = np.random.randint(y_low, y_high)            #
+            
+            ifg_cropped[:,:, data_n] = ifg[y_start : y_start + out_resolution, x_start : x_start + out_resolution]
+            Y_loc[data_n, :] = np.array([def_x_centre- x_start, def_y_centre - y_start, def_x_half_width, def_y_half_width])
+            data_n +=1 
+        return ifg_cropped, Y_loc
+        
+
+
+
+#%%
 
 def augment_flip(X, Y_loc, flip):
     """A function to flip data horizontally or vertically 
@@ -20,13 +163,13 @@ def augment_flip(X, Y_loc, flip):
     
     Y_loc_flip = np.copy(Y_loc)                              # make a copy of the location labels
     
-    if flip is 'up_down':                                       # conver the string input to a value
+    if flip == 'up_down':                                       # conver the string input to a value
         X_flip = X[:,::-1,:,:]                              # reverse in dim 2 which is y
         Y_loc_flip[:,1] = X.shape[1] - Y_loc_flip[:,1]
-    elif flip is 'left_right':
+    elif flip == 'left_right':
         X_flip = X[:,:,::-1,:]                              # reverse in dim 3 which is x
         Y_loc_flip[:,0] = X.shape[2] - Y_loc_flip[:,0]      # flipping horizontally
-    elif flip is 'both':
+    elif flip == 'both':
         X_flip = X[:,::-1,::-1,:]                              # reverse in dim 2 (y) and dim 3 (x)
         Y_loc_flip[:,1] = X.shape[1] - Y_loc_flip[:,1]
         Y_loc_flip[:,0] = X.shape[2] - Y_loc_flip[:,0]      # flipping horizontally

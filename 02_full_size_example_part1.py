@@ -16,9 +16,18 @@ from pathlib import Path
 import shutil
 import pdb
 
+def initialise_arrays(n_data, ny, nx,n_channels):
+    """
+    """
+    X = ma.zeros((n_data, ny, nx, n_channels))               # initialise, rank 4 ready for Tensorflow, last dimension is being used for different crops.  
+    Y_class = np.zeros((n_data, 3))                                                                             # initialise, doesn't need another dim as label is the same regardless of the crop.  
+    Y_loc = np.zeros((n_data, 4, 9))                                                                            # initialise
+    return X, Y_class, Y_loc
+
+
 
 #%% MEG debug import
-import sys
+
 sys.path.append("/home/matthew/university_work/python_stuff/python_scripts")
 from small_plot_functions import matrix_show, quick_linegraph
 import matplotlib.pyplot as plt
@@ -28,8 +37,8 @@ import matplotlib.pyplot as plt
 
 #%% 0: Things to set
 
-dependency_paths = {'syinterferopy' : '/home/matthew/university_work/15_my_software_releases/SyInterferoPy-3.0.1/lib/',              # Available from Github: https://github.com/matthew-gaddes/SyInterferoPy
-                    #'syinterferopy' : '/home/matthew/university_work/01_blind_signal_separation_python/SyInterferoPy',
+dependency_paths = {#'syinterferopy' : '/home/matthew/university_work/15_my_software_releases/SyInterferoPy-3.0.1/',              # Available from Github: https://github.com/matthew-gaddes/SyInterferoPy
+                    'syinterferopy' : '/home/matthew/university_work/01_blind_signal_separation_python/SyInterferoPy',
 
                     'srtm_dem_tools': '/home/matthew/university_work/15_my_software_releases/SRTM-DEM-tools-2.1.1/',                # Available from Github: https://github.com/matthew-gaddes/SRTM-DEM-tools
                     'volcnet'       : '/home/matthew/university_work/13_volcnet'}                                                   # Available from Github: https://github.com/matthew-gaddes/VolcNet
@@ -74,21 +83,27 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
 def_min = 0.05                                                                            # in m, real ifg must have a signal bigger than this to be classed as deformation.  
 def_max = 0.5
 random_large_threshold = 0.1                                                                # this fraction of ifgs with deformation over the max are still included.  
-
+random_no_def_accept = 0.1                                                                # this fraction of no deforamtion ifgs will be accepted.  
     #real_ifg_settings       = {'augmentation_factor' : 116}                                           # factor to augment by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.
                                                                                                    # v2 data has ? ifgs, so ? x 89 ~ 20000 etc.  
 
 # step 04 (merge synthetic and real, and rescale to desired range)
 cnn_settings = {'input_range'       : {'min':-1, 'max':1}}
 
-   
+
+
+print(f"\n\nSetting a random seed\n\n")   
 np.random.seed(0)                                                                                           # 0 used in the example
+
+
+
               
 #%% Import dependencies (paths set above)
 
 from vudlnet21.file_handling import open_smithsonian_csv_file, open_all_volcnet_files
 #from vudlnet21.neural_net import augment_data, choose_for_augmentation, merge_and_rescale_data, define_two_head_model, file_list_divider, file_merger
 from vudlnet21.plotting import plot_data_class_loc_caller, open_datafile_and_plot
+from vudlnet21.augmentation import rescale_timeseries, random_cropping
 
 sys.path.append(dependency_paths['srtm_dem_tools'])
 from dem_tools_lib import SRTM_dem_make_batch                                       # From SRTM dem tools
@@ -130,6 +145,7 @@ except:
     print('Saved the dems as a .pkl for future use.  ')
 
 
+
 #%%  possibly use to edit synyhteic ifgs.  
 # outdir = Path("/home/matthew/university_work/02_neural_network_python/03_VUDLNet_21_github_repo/02_full_size_example/step_02_synthetic_data_2")
 # data_files = glob.glob(str(Path(project_outdir / "step_02_synthetic_data/*.pkl")))             #
@@ -149,6 +165,8 @@ except:
 
 # sys.exit()
 
+
+
 #%% 2: Create or load the synthetic interferograms.  
 print("\nStep 02: Creating or loading synthetic interferograms")
 
@@ -156,6 +174,9 @@ n_synth_data = ifg_settings['n_per_file'] * synthetic_ifgs_n_files
 
 print('Determining if files containing the synthetic deformation patterns exist... ', end = '')
 data_files = glob.glob(str(Path(project_outdir / "step_02_synthetic_data/*.pkl")))             #
+
+
+
 if len(data_files) == synthetic_ifgs_n_files:
     print(f"The correct number of files were found ({synthetic_ifgs_n_files}) so no new ones will be generated.  "
           f"However, this doesn't guarantee that the files were made using the settings in synthetic_ifgs_settings.  Check synth_data_settings.txt to be sure.   ")
@@ -194,13 +215,23 @@ else:
         sys.exit()
 
 
+
+
+
+
 open_datafile_and_plot(project_outdir / "step_02_synthetic_data" / "data_file_00000.pkl", n_data = 15, window_title ='01 Sample of synthetic data')                                        # open and plot the data in 1 file
 
 
 
 
+#%%  Compute the deformation labels.  
+
 
 #%% 3: Load the real data (and augment).  Note that these are in metres, and use one hot encoding for the class, and are masked arrays (incoherence and water are masked)
+
+
+
+
 print("\nStep 03: Loading and augmenting the real interferograms from VolcNet.  ")
 print("    Starting to open the real data....", end = '')
 
@@ -216,13 +247,18 @@ volcnet_files = sorted(glob.glob(dependency_paths['volcnet'] +  '/*.pkl'))      
 file_n = 0
 data_n = 0
 
-X = ma.zeros((ifg_settings['n_per_file'], synthetic_ifgs_settings['n_pix'], synthetic_ifgs_settings['n_pix'], 1))        # initiate, rank 4 ready for Tensorflow.  
-Y_class = np.zeros((ifg_settings['n_per_file'], 3))
-Y_loc = np.zeros((ifg_settings['n_per_file'], 4))
+data_indexs = []                                                                                                                 # initialise
+X, Y_class, Y_loc = initialise_arrays(ifg_settings['n_per_file'], synthetic_ifgs_settings['n_pix'], synthetic_ifgs_settings['n_pix'], 9)                # initiliase for next file.      
 
-for volcnet_file in volcnet_files[11:12]:
-    print("TESTING - only using Sierra Negra 128 volcnet file.  ")
+for volcnet_file in volcnet_files:
+# for volcnet_file in volcnet_files[11:12]:
+#     print("TESTING - only using Sierra Negra 128 volcnet file.  ")
+# for volcnet_file in volcnet_files[10:]:
+#     print("TESTING - Using only some volcnet files.  ")
     
+
+    
+    print(f"Opening file: {volcnet_file.split('/')[-1]}")
     # 1: Open the file
     with open(volcnet_file, 'rb') as f:
         displacement_r3 = pickle.load(f)
@@ -230,70 +266,92 @@ for volcnet_file in volcnet_files[11:12]:
         persistent_defs = pickle.load(f)
         transient_defs = pickle.load(f)
 
-    n_acq = len(tbaseline_info['acq_dates'])
+    n_acq, ny, nx = displacement_r3['cumulative'].shape
     n_ifg = (n_acq*n_acq) - n_acq
-
+    print(f"The interferograms are of size: {displacement_r3['mask'].shape}")
+   
+    if (nx < synthetic_ifgs_settings['n_pix']) or (ny < synthetic_ifgs_settings['n_pix']):
+        if ny/nx < 1:                                                                           # this is less than 1 if the image is wider than tall.  
+            rescale_factor = (1.4 * synthetic_ifgs_settings['n_pix']) /ny                                                           #rescale to ensure y is large enough to be cropped down to 224    
+        else:
+            rescale_factor = (1.4 * synthetic_ifgs_settings['n_pix']) / nx
+            
+        displacement_r3 = rescale_timeseries(displacement_r3, rescale_factor)
+        print(f"The interferograms have been interpolated to size: {displacement_r3['mask'].shape}")
+        
+        
+    
     
     for acq_n1, acq_1 in enumerate(tbaseline_info['acq_dates']):                                                # 
         for acq_n2, acq_2 in enumerate(tbaseline_info['acq_dates']):
-            if acq_1 == acq_2:                                                                                      # will just be zeros.  
+            if acq_1 == acq_2:                                                                                                          # will just be zeros so ignore.   
                 pass
             else:
-                ifg = displacement_r3['cumulative'][acq_n2,] - displacement_r3['cumulative'][acq_n1,]                                               # make the ifg
-                def_predicted, sources, def_location = volcnet_labeller(f"{acq_1}_{acq_2}", persistent_defs, transient_defs)                      # label the ifg
+                ifg = displacement_r3['cumulative'][acq_n2,] - displacement_r3['cumulative'][acq_n1,]                                    # make the ifg between the two acquisitions.  
+                def_predicted, sources, def_location = volcnet_labeller(f"{acq_1}_{acq_2}", persistent_defs, transient_defs)             # label the ifg, def_location is still in terms of lon and lat
+                def_loc_pixels = ll_2_pixel(def_location, displacement_r3['lons'], displacement_r3['lats'])                             # convert the location label from lon lat to pixels (x then y)
                 
+                if (np.abs(def_predicted) < def_min):
+                    if (np.random.rand() < random_no_def_accept):                                                                                              # if it doesn't have a deformation signal we're classing as visible.  
+                        X[data_n,] = random_cropping(ifg, synthetic_ifgs_settings['n_pix'], None)    
+                        data_n += 1
+                        Y_class[data_n,] = np.array([0,0,1])                                                                                 # this is the one hot encoding for no deformation.  
+                        Y_loc[data_n,] = np.repeat(np.array([0,0,0,0])[:,np.newaxis], axis = -1, repeats = 9)                                                                                 # no def has no location.  
+                        data_indexs.append((file_n, data_n, 2))
+                        print(f"file: {file_n} {data_n}: {acq_1} and {acq_2} : no deformation.  ")
                 
-                
-                if def_predicted < def_min:                                                                                     # if it doesn't have a deformation signal we're classing as visible.  
-                    Y_class[data_n,] = np.array([0,0,1])                                                                        # this is the one hot encoding for no deformation.  
-                    Y_loc[data_n,] = np.array([0,0,0,0])                                                                        # no def has no location.  
-                    viable = True
-                
-                elif (def_predicted < def_max) or (def_predicted > def_max and np.random.rand() < random_large_threshold):
+                elif (np.abs(def_predicted) < def_max) or (np.abs(def_predicted) > def_max and np.random.rand() < random_large_threshold):
+                    ifg_cropped, Y_loc_cropped = random_cropping(ifg, synthetic_ifgs_settings['n_pix'], def_loc_pixels)    
+                    # from vudlnet21.aux import add_square_plot
+                    # f, axes = plt.subplots(1,9)
+                    # for i in range(9):
+                    #     axes[i].imshow(ifg_cropped[:,:,i])
+                    #     add_square_plot(Y_loc[i, 0] - Y_loc[i, 2], Y_loc[i, 0] + Y_loc[i, 2],
+                    #                     Y_loc[i, 1] - Y_loc[i, 3], Y_loc[i, 1] + Y_loc[i, 3], axes[i], colour = 'k')
+                    X[data_n,] = ifg_cropped
+                    Y_loc[data_n] = Y_loc_cropped.T
+                    
+                    data_n += 1
                     if sources[0] == 'dyke':
-                        Y_class[data_n,] = np.array([1,0,0])                                                                        # this is the one hot encoding for dyke
+                        Y_class[data_n,] = np.array([1,0,0])                                                                             # this is the one hot encoding for dyke
+                        data_indexs.append((file_n, data_n, 0))
+                        print(f"file: {file_n} {data_n}: {acq_1} and {acq_2} : dyke ({def_predicted:.2f} m of deformation).  ")
                     elif sources[0] == 'sill':
-                        Y_class[data_n,] = np.array([0,1,0])                                                                        # this is the one hot encoding for sill
-                    viable = True
-                    
-                if viable:
-                    # crop the ifg to the required size and add to X
-                    pdb.set_trace()
-                    ny, nx = ifg.shape
-                    start_y = int((ny -  synthetic_ifgs_settings['n_pix']) / 2 )
-                    start_x = int((ny -  synthetic_ifgs_settings['n_pix']) / 2 )            
-                    X[data_n,] = ifg[start_y : (start_y + synthetic_ifgs_settings['n_pix']),
-                                        start_x : (start_x + synthetic_ifgs_settings['n_pix']), np.newaxis]                                                               # make have one channel
-                
-
-                else:
-
+                        Y_class[data_n,] = np.array([0,1,0])                                                                             # this is the one hot encoding for sill
+                        data_indexs.append((file_n, data_n, 1))
+                        print(f"file: {file_n} {data_n}: {acq_1} and {acq_2} : sill ({def_predicted:.2f} m of deformation).  ")
                         
-                    
-                    loc = ll_2_pixel(def_location, displacement_r3['lons'], displacement_r3['lats'])                           # convert lon and lat of deformation to pixel number
-                    x_centre = int(np.mean([np.max(loc[:,0]), np.min(loc[:,0])])) - start_x                                     # subtract start_x to incorporate cropping that was done before
-                    x_half_width = int((np.max(loc[:,0]) - np.min(loc[:,0]))/2) 
-                    y_centre = int(np.mean([np.max(loc[:,1]), np.min(loc[:,1])])) - start_y                                      # and the same for y
-                    y_half_width = int((np.max(loc[:,1]) - np.min(loc[:,1]))/2)
-                    Y_loc[data_n,] = np.array([x_centre, y_centre, x_half_width, y_half_width])                                                      
-
-                    
-
-                data_n += 1
-
                 # When generated the required number per file, save the file.  
-                if data_n == (ifg_settings['n_per_file'] - 0):                         
+                if data_n == (ifg_settings['n_per_file'] - 1):                         
                     print(f"    Saving file {file_n}")
-                    with open(project_outdir / "step_03_labelled_volcnet_data" / f"data_file_{file_n:05d}.pkl", 'wb') as f:                                        # save the output as a pickle
+                    with open(project_outdir / "step_03_labelled_volcnet_data" / f"data_file_{file_n:05d}.pkl", 'wb') as f:                     # save the output as a pickle
                         pickle.dump(X, f)
                         pickle.dump(Y_class, f)
                         pickle.dump(Y_loc, f)
                     file_n += 1                                                                                                                 # advance to next file
                     data_n = 0                                                                                                                  # initiate for next file        
-                    X = ma.zeros((ifg_settings['n_per_file'], synthetic_ifgs_settings['n_pix'], synthetic_ifgs_settings['n_pix'], 1))        # initiate for next file
-                    Y_class = np.zeros((ifg_settings['n_per_file'], 3))
-                    Y_loc = np.zeros((ifg_settings['n_per_file'], 4))
+                    X, Y_class, Y_loc = initialise_arrays(ifg_settings['n_per_file'], 
+                                                          synthetic_ifgs_settings['n_pix'], synthetic_ifgs_settings['n_pix'], 9)                # initiliase for next file.  
+
+if data_n != (ifg_settings['n_per_file'] - 1):                         
+    print(f"    Saving file {file_n} (part complete final file)")
+    with open(project_outdir / "step_03_labelled_volcnet_data" / f"data_file_{file_n:05d}.pkl", 'wb') as f:                     # save the output as a pickle
+        pickle.dump(X[:data_n, ], f)                        # crop in first dim
+        pickle.dump(Y_class[:data_n, ], f)
+        pickle.dump(Y_loc[:data_n, ], f)        
+
                 
+
+# convert the data index from a list of tuples to an array.  
+data_index = np.zeros((len(data_indexs), 3))                                                # 0 for dyke, 1 for sill, 2 for no def.  
+for n, data_index_n in enumerate(data_indexs):
+    data_index[n, :] = np.array([data_index_n[0], data_index_n[1], data_index_n[2]])
+
+
+sys.exit()
+
+
+#%% Real data balance classes, merge, shuffle.  
 
 
 #%%
@@ -302,68 +360,6 @@ from vudlnet21.plotting import plot_data_class_loc_caller, open_datafile_and_plo
 open_datafile_and_plot(project_outdir / "step_03_labelled_volcnet_data" /  "data_file_00000.pkl", n_data = 15, window_title = '03 Sample of augmented real data')
             
 sys.exit()
-
-
-
-#%%
-
-
-
-if volcnet_version == 'v1':
-    with open(volcnet_dir / "v1_manually_split" / "training_data.pkl", 'rb') as f:                     # open only the train data
-        data_dict = pickle.load(f)                                                                     # 
-    X = data_dict['X_m']                                                                                # this is a masked array of ifgs, units are metres
-    Y_class = data_dict['Y_class']
-    Y_loc = data_dict['Y_loc']
-
-elif volcnet_version == 'v2':
-    X, Y_class, Y_loc = open_all_volcnet_files(volcnet_dir / "v2_all_data", synthetic_ifgs_settings['defo_sources'])
-else:
-    raise Exception("There are currently only versions 'v1' and 'v2' of volcnet, but you have requested {volcnet_version} so exiting.  ")
-
-
-plot_data_class_loc_caller(X[:30,], Y_class[:30,], Y_loc[:30,], source_names = ['dyke', 'sill', 'no def'], window_title = '02 Sample of Real data')         # plot the data in it (note that this can be across multiople windows)        
-print('Done.  ')
-
-
-n_augmented_files = int((X.shape[0] * real_ifg_settings['augmentation_factor']) / ifg_settings['n_per_file'])                   # detemine how many files will be needed, given the agumentation factor.  
-
-print('    Determining if files containing the augmented real data exist.')
-real_augmented_files = glob.glob(str(project_outdir / 'step_03_real_data' / 'augmented' / "*.pkl"))             #
-if len(real_augmented_files) == n_augmented_files:
-    print(f"    The correct number of augmented real data files were found ({n_augmented_files}) so no new ones will be generated.  "
-          f"However, this doesn't guarantee that the files were made using the current real data.  ")
-else:
-    print(f"    {len(real_augmented_files)} files were found, but {n_augmented_files} were requested.  "
-          f"The folder containing these (./step_03_real_data/augmented) will be deleted, and the correct number of files generated.  ")
-    answer = input("Do you wish to continue ('y' or 'n')?")
-    if answer == 'n':
-        sys.exit()
-    elif answer == 'y':
-        try:
-            shutil.rmtree(str(project_outdir / "step_03_real_data" / "augmented"))
-        except:
-            pass
-        os.mkdir((project_outdir / "step_03_real_data" /"augmented"))
-
-        print(f"    There are {X.shape[0]} real data and the augmentation factor is set to {real_ifg_settings['augmentation_factor']}.  ")
-        print(f"    With {ifg_settings['n_per_file']} data per file, the nearest integer number of files is {n_augmented_files}.  ")
-        for n_augmented_file in range(n_augmented_files):                                                                               # loop through each file that is to be made
-            print(f'    File {n_augmented_file} of {n_augmented_files}...', end = '')  
-            X_sample, Y_class_sample, Y_loc_sample = choose_for_augmentation(X, Y_class, Y_loc,                                         # make a new selection of the data with balanced classes
-                                                                              n_per_class = int(X.shape[0] / Y_class.shape[1]))          # set it so there are as many per class as there are (on average) for the real data.  
-            X_aug, Y_class_aug, Y_loc_aug = augment_data(X_sample, Y_class_sample, Y_loc_sample,                                        # augment the sample of real data
-                                                          n_data = ifg_settings['n_per_file'])                                           # make as many new data as are set to be in a single file.  
-        
-            with open(project_outdir / "step_03_real_data" / "augmented" / f"data_file_{n_augmented_file:05d}.pkl", 'wb') as f:                                        # save the output as a pickle
-                pickle.dump(X_aug, f)
-                pickle.dump(Y_class_aug, f)
-                pickle.dump(Y_loc_aug, f)
-            f.close()
-            print('Done!')
-        print('Done!')
-
-open_datafile_and_plot(project_outdir / "step_03_real_data" / "augmented" / "data_file_00000.pkl", n_data = 15, window_title = '03 Sample of augmented real data')
 
 
 
