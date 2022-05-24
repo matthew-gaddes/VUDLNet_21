@@ -1,7 +1,4 @@
-remake_synthetic_data.py
-01_toy_example/step_01_dem_data/volcano_dems.pkl
-01_toy_example/step_06_train_fully_connected_model/*.h5
-01_toy_example/step_07_train_full_model/*.h5
-
-02_full_size_example/*/*
-old_runs/*
+vudlnet21/__pycache__/*
+step_01_dem_data/volcano_dems.pkl
+step_02_synthetic_data/*.pkl
+step_03_labelled_volcnet_data/*.pkl
