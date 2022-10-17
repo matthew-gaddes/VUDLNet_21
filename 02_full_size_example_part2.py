@@ -14,6 +14,7 @@ import glob
 import os
 import sys
 import pickle
+import pdb
 
 import tensorflow as tf
 import tensorflow.keras as keras
@@ -22,7 +23,7 @@ from tensorflow.keras import Input, Model
 from tensorflow.keras import losses, optimizers
 from tensorflow.keras.utils import plot_model
 
-from vudlnet21.neural_net import define_two_head_model, numpy_files_sequence, save_model_each_epoch, save_batch_loss
+from vudlnet21.neural_net import define_two_head_model, numpy_files_sequence, save_model_each_epoch, save_batch_loss, numpy_files_sequence_old
 #from vudlnet21.neural_net import custom_range_for_CNN
 from vudlnet21.plotting import plot_all_metrics, plot_data_class_loc_caller
 
@@ -38,13 +39,11 @@ project_outdir = Path('./')
 synthetic_ifgs_settings = {'defo_sources' : ['dyke', 'sill', 'no_def']}               # deformation patterns that will be included in the dataset.  
 cnn_settings = {'input_range'       : {'min':-1, 'max':1}}
 
-# step 05 (compute bottleneck features): 
-do_step_05                        = False                                                                                        # no settings here.  
-    
+   
 # step 06 (train the fully connected part of the network)
 do_step_06                        = True
 batch_size_fc                     = 25                                              # as data files have 500 in them, this divides in cleanly (i.e. no half batches).  Not tested in case that it doesn't divide in cleanly, perhaps last batch is just smaller and faster?  
-fc_loss_weights                   = [0.05, 0.95]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+fc_loss_weights                   = [1., 1.]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
 n_epochs_fc                       = 10                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 cnn_settings = {}
 cnn_settings['n_files_train']     = 70                                              # the number of files that will be used to train the network
@@ -65,8 +64,8 @@ n_plot = 30                                                                     
 
 
 # step 09: Predict on the real testing data
-volcnet_dir             = Path('/home/matthew/university_work/02_neural_network_python/08_VolcNet_copy/')
-n_plot = 30                                                                         # number of test data to plot after and step 07
+#volcnet_dir             = Path('/home/matthew/university_work/02_neural_network_python/08_VolcNet_copy/')
+#n_plot = 30                                                                         # number of test data to plot after and step 07
 
 #############################################################################################################################################################################################################
 #############################################################################################################################################################################################################
@@ -74,6 +73,7 @@ n_plot = 30                                                                     
 #############################################################################################################################################################################################################
 #############################################################################################################################################################################################################
 
+#pdb.set_trace()
 
 sys.path.append(dependency_paths['deep_learning_tools'])
 import deep_learning_tools
@@ -129,22 +129,38 @@ vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (2
 output_class, output_loc = define_two_head_model(vgg16_block_1to5.output, len(synthetic_ifgs_settings['defo_sources']))          # build the fully connected part of the model, and get the two model outputs
 vgg16_2head = Model(inputs=vgg16_block_1to5.input, outputs=[output_class, output_loc])                                           # define the full model
 
-for layer in vgg16_2head.layers[:15]:                                                                                             # freeze blocks 1-4 (ie, we are only fine tuneing the 5th block and the fully connected part of the network)
+for layer in vgg16_2head.layers[:20]:                                                                                             # freeze blocks 1-5 (ie, train only fully connected part of the network)
     layer.trainable = False    
 
+opt_used = optimizers.Nadam(clipnorm = 1., clipvalue = 0.5)                                                                       # adam with Nesterov accelerated gradient
 
-opt_used = optimizers.Nadam(clipnorm = 1., clipvalue = 0.5)                                                       # adam with Nesterov accelerated gradient
+loss_class = losses.categorical_crossentropy                                                                                                      # good loss to use for classification problems, may need to switch to binary if only two classes though?
+loss_loc = losses.mean_squared_error                                                                                                              # loss for localisation
+
+vgg16_2head.compile(optimizer = opt_used, loss=[loss_class, loss_loc], loss_weights = fc_loss_weights)                                  
+
+train_generator_fc = numpy_files_sequence(data_files_train, batch_size = batch_size_b5)                                          # sequence using the training data
+validation_generator_fc = numpy_files_sequence(data_files_validate, batch_size = batch_size_b5)                                  # and validation data
+
+
+
+vgg16_2head_history = vgg16_2head.fit(train_generator_fc, epochs = n_epochs_fc, validation_data = validation_generator_fc,
+                                      shuffle = False)
+                                      
+
+#%%
+
+sys.exit()
 
 batch_metric_names = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']                             # all the metrics used in our model
 batch_metrics_fc = {}                                                                                                                  # dist to store metrics and their values for every batch
 for batch_metric_name in batch_metric_names:
     batch_metrics_fc[batch_metric_name] = []
 
-loss_class = losses.categorical_crossentropy                                                                                                      # good loss to use for classification problems, may need to switch to binary if only two classes though?
-loss_loc = losses.mean_squared_error                                                                                                              # loss for localisation
 
-vgg16_2head.compile(optimizer = opt_used, metrics=batch_metric_names,                                                         # 
-                    loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  
+# vgg16_2head.compile(optimizer = opt_used, metrics=batch_metric_names,                                                         # 
+#                     loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  
+
 
 try:
     plot_model(vgg16_2head, to_file=project_outdir / 'step_06_train_fully_connected_model' / 'vgg16_2head.png', show_shapes = True, show_layer_names = True)      # try to make a graphviz style image showing the complete model 

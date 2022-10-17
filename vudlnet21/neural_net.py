@@ -55,6 +55,58 @@ class numpy_files_sequence(tf.keras.utils.Sequence):                            
         """
         self.file_list = file_list
         self.batch_size = batch_size
+        self.n_file_loaded = -1
+
+    def __len__(self):                                                      # number of batches in an epoch
+        """As one large file (e.g. 1000 data) can't be used as a batch on a GPU (but maybe on a CPU?), we will break each 
+        file into n_batches_per_file.  Therefore, the total number of batches (per epoch) will be n_files x n_batches"""
+        
+        import numpy as np
+        n_files = len(self.file_list)                                                           # get the number of data files.  
+        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                              # get the number of data in a file (assumed to be the same for all files)
+        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))                    # the number of batches required to cover every data in the file.  
+        n_batches = n_files * n_batches_per_file
+        self.n_batches_per_file = n_batches_per_file
+        return n_batches
+
+    def __getitem__(self, idx):                                             # iterates over the data and returns a complete batch, index is a number upto the number of batches set by __len__, with each number being used once but in a random order.  
+        
+        import numpy as np
+        n_file, n_batch = divmod(idx, self.n_batches_per_file)                              # idx tells us which batch, but that needs mapping to a file and to which batch in that file.  
+
+        if self.n_file_loaded != n_file:                       
+            data = np.load(self.file_list[n_file])                                              # load the correct numpy file.  
+            self.X = data['X']
+            self.Y_class = data['Y_class']
+            self.Y_loc = data['Y_loc']
+            self.n_file_loaded = n_file
+        
+        X_batch = self.X[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
+        Y_class = self.Y_class[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
+        Y_loc = self.Y_loc[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
+        
+        return X_batch, [Y_class, Y_loc]
+
+
+
+#%%
+
+class numpy_files_sequence_old(tf.keras.utils.Sequence):                                                                                  # inheritance not tested like ths.  
+    """A data generator for use with .npz files that contains X, Y_class, and Y_loc.  Can be used with either training, validation, or testing data.  
+    Key methods:
+            __len__                 to get the number of batches to pass all the data through (i.e. for one epoch)                        
+            __getitem__             to get a batch of data.  
+    If built correctly, it should guarantee that each sample is only used once per epoch.  
+    """
+        
+    def __init__(self, file_list, batch_size):                                          # constructor
+        """
+        Inputs:
+            file_list | list of strings or paths | locations of numpy files of data.  
+            batch_size | int | number of data for each batch.  Note tested if larger than the number of data in a single file.  
+        """
+        self.file_list = file_list
+        self.batch_size = batch_size
 
     def __len__(self):                                                      # number of batches in an epoch
         """As one large file (e.g. 1000 data) can't be used as a batch on a GPU (but maybe on a CPU?), we will break each 
