@@ -9,6 +9,88 @@ Created on Mon Nov 15 16:28:33 2021
 #%%
 
 
+def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225}):
+    """ Given a list of synthetic data files and real data files (usually the augmented real data),
+    
+    Inputs:
+        synthetic_data_files | list of Paths or string | locations of the .pkl files containing the masked arrays
+        reak_data_files      | list of Paths or string | locations of the .pkl files containing the masked arrays
+        output_range         | dict                    | min and maximum of each channel in each image.  Should be set to suit the CNN being used.  
+    Returns:
+        .npz files in step_04_merged_rescaled_data
+    History:
+        2020_10_29 | MEG | Written
+        2021_01_06 | MEG | Fix bug in that mixed but not rescaled data was being written to the numpy arrays.  
+
+    """
+    import pickle
+    import numpy as np
+    import numpy.ma as ma
+    
+    from deep_learning_tools.data_handling import custom_range_for_CNN
+    
+    def data_channel_checker(X, n_cols = None, window_title = None):
+        """ Plot some of the data in X.   All three channels are shown.  
+        """
+        import matplotlib.pyplot as plt        
+        if n_cols == None:                                              # if n_cols is None, we'll plot all the data
+            n_cols = X.shape[0]                                         # so n_cols is the number of data
+            plot_args = np.arange(0, n_cols)                            # and we'll be plotting each of them
+        else:
+            plot_args = np.random.randint(0, X.shape[0], n_cols)        # else, pick some at random to plot
+        f, axes = plt.subplots(3,n_cols)
+        if window_title is not None:
+            f.canvas.set_window_title(window_title)
+        for plot_n, im_n in enumerate(plot_args):                           # loop through each data (column)               
+            axes[0, plot_n].set_title(f"Data: {im_n}")
+            for channel_n in range(3):                                      # loop through each row
+                axes[channel_n, plot_n].imshow(X[im_n, :,:,channel_n])
+                if plot_n == 0:
+                    axes[channel_n, plot_n].set_ylabel(f"Channel {channel_n}")
+
+    if len(synthetic_data_files) != len(real_data_files):
+        raise Exception('This funtion is only designed to be used when the number of real and synthetic data files are the same.  Exiting.  ')
+
+    n_files = len(synthetic_data_files)        
+    out_file = 0
+    for n_file in range(n_files):
+        print(f'    Opening and merging file {n_file} of each type... ', end = '')
+        with open(real_data_files[n_file], 'rb') as f:                                                      # open the real data file
+            X_real = pickle.load(f)
+            Y_class_real = pickle.load(f)
+            Y_loc_real = pickle.load(f)
+        f.close()    
+        
+        with open(synthetic_data_files[n_file], 'rb') as f:                                                      # open the synthetic data file
+            X_synth = pickle.load(f)
+            Y_class_synth = pickle.load(f)
+            Y_loc_synth = pickle.load(f)
+        f.close()    
+
+        X = ma.concatenate((X_real, X_synth), axis = 0)                                             # concatenate the data
+        Y_class = ma.concatenate((Y_class_real, Y_class_synth), axis = 0)                           # and the class labels
+        Y_loc = ma.concatenate((Y_loc_real, Y_loc_synth), axis = 0)                                 # and the location labels
+        
+        mix_index = np.arange(0, X.shape[0])                                                        # mix them, get a lis of arguments for each data 
+        np.random.shuffle(mix_index)                                                                # shuffle the arguments
+        X = X[mix_index,]                                                                           # reorder the data using the shuffled arguments
+        Y_class = Y_class[mix_index]                                                                # reorder the class labels
+        Y_loc = Y_loc[mix_index]                                                                    # and the location labels
+
+        X_rescale = custom_range_for_CNN(X, output_range)                                              # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255]), and convert to numpy array
+                
+        data_mid = int(X_rescale.shape[0] / 2)                                                                                                                          # data before this number in one file, and after in another
+        np.savez(f'step_05_merged_rescaled_data/data_file_{out_file:05d}.npz', X = X_rescale[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])           # save the first half of the data
+        out_file += 1                                                                                                                                                   # after saving once, update
+        np.savez(f'step_05_merged_rescaled_data/data_file_{out_file:05d}.npz', X = X_rescale[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])           # save the second half of the data
+        out_file += 1                                                                                                                                                   # and after saving again, update again.  
+        print('Done.  ')
+        
+        
+
+#%%
+
+
 def file_merger(files): 
     """Given a list of files, open them and merge into one array.  
     Inputs:
@@ -99,80 +181,3 @@ def open_smithsonian_csv_file(smithsonian_csv_file, side_length = 40e3):
     return volcanoes
 
 
-
-#%%
-
-
-def open_all_volcnet_files(volcnet_dir, defo_sources):
-    """ Given a directory of VOLCNET files, open all of them.  
-    """
-    import glob
-    import numpy as np
-    import numpy.ma as ma
-    
-    VolcNet_files = sorted(glob.glob(str(volcnet_dir / '*.pkl')))             #  get a list of the paths to all the VolcNet files       
-    if len(VolcNet_files) == 0:
-        raise Exception('No VolcNet files have been found.  Perhaps the path is wrong? Or perhaps you only want to use synthetic data?  In which case, this section can be removed.  Exiting...')
-    
-    X_1s = []
-    Y_class_1s = []
-    Y_loc_1s = []
-    for VolcNet_file in VolcNet_files:
-        X_1, Y_class_1, Y_loc_1 = open_VolcNet_file(VolcNet_file, defo_sources)
-        X_1s.append(X_1)
-        Y_class_1s.append(Y_class_1)
-        Y_loc_1s.append(Y_loc_1)
-    X = ma.concatenate(X_1s, axis = 0)
-    Y_class = np.concatenate(Y_class_1s, axis = 0)
-    Y_loc = np.concatenate(Y_loc_1s, axis = 0)
-    
-    return X, Y_class, Y_loc
-
-
-#%%
-
-
-def open_VolcNet_file(file_path, defo_sources):
-    """A file to open a single VolcNet file and extrast the deformation source into a one hot encoded numpy array, 
-    and the deforamtion location as a n_ifg x 4 array.  
-    Ifgs are masked arrays, in m, with up as positive.  
-    
-    Inputs:
-        file_path | string or Path | path to fie
-        defo_sources | list of strings | names of deformation sources, should the same as the names used in VolcNet
-    
-    Returns:
-        X | r4 masked array | ifgs, as above. ? x y x x n_channels  
-        Y_class | r2 array | class labels, ? x n_classes
-        Y_loc | r2 array | locations of signals, ? x 4 (as x,y, width, heigh)
-    
-    History:
-        2020_01_11 | MEG | Written
-    """
-    import pickle
-    import numpy as np
-    import numpy.ma as ma
-    
-    # 0: Open the file    
-    with open(file_path, 'rb') as f:                                                      # open the real data file
-        ifgs = pickle.load(f)                                                                # this is a masked array of ifgs
-        ifgs_dates = pickle.load(f)                                                          # list of strings, YYYYMMDD that ifgs span
-        pixel_lons = pickle.load(f)                                                          # numpy array of lons of lower left pixel of ifgs
-        pixel_lats = pickle.load(f)                                                          # numpy array of lats of lower left pixel of ifgs
-        all_labels = pickle.load(f)                                                          # list of dicts of labels associated with the data.  e.g. deformation type etc.  
-    f.close()        
-    
-    # 1: Initiate arrays
-    n_ifgs = ifgs.shape[0]                                                                      # get number of ifgs in file
-    X = ifgs                                                                                    # soft copy to rename
-    Y_class = np.zeros((n_ifgs, len(defo_sources)))                                             # initiate
-    Y_loc = np.zeros((n_ifgs, 4))                                                               # initaite
-
-    # 2: Convert the deformation classes to a one hot encoded array and the locations to an array
-    for n_ifg in range(n_ifgs):                                                                 # loop through the ifgs
-        current_defo_source = all_labels[n_ifg]['deformation_source']                           # get the current ifgs deformation type/class label
-        arg_n = defo_sources.index(current_defo_source)                                         # get which number in the defo_sources list this is
-        Y_class[n_ifg, arg_n] = 1                                                               # write it into the correct position to make a one hot encoded list.  
-        Y_loc[n_ifg, :] = all_labels[n_ifg]['deformation_location']                             # get the location of deformation.  
-        
-    return X, Y_class, Y_loc
