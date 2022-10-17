@@ -6,21 +6,27 @@ Created on Mon Nov 15 16:28:33 2021
 @author: matthew
 """
 
+import pdb
+
 #%%
 
 
-def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225}):
+def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225},
+                           triplicate_channel = False):
     """ Given a list of synthetic data files and real data files (usually the augmented real data),
     
     Inputs:
         synthetic_data_files | list of Paths or string | locations of the .pkl files containing the masked arrays
         reak_data_files      | list of Paths or string | locations of the .pkl files containing the masked arrays
         output_range         | dict                    | min and maximum of each channel in each image.  Should be set to suit the CNN being used.  
+        triplicate_channel   \ Boolean                  | Data are saved as rank 4 (n_data, ny, nx, n_chanels), and this option repeates the channel data 3 times. 
+                                                          Useful if we have one channel data but want to use it with an RGB triple channel model.  
     Returns:
         .npz files in step_04_merged_rescaled_data
     History:
         2020_10_29 | MEG | Written
         2021_01_06 | MEG | Fix bug in that mixed but not rescaled data was being written to the numpy arrays.  
+        2022_10_17 | MEG | Add option to repeat data across 3 channels.  
 
     """
     import pickle
@@ -77,7 +83,10 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
         Y_class = Y_class[mix_index]                                                                # reorder the class labels
         Y_loc = Y_loc[mix_index]                                                                    # and the location labels
 
-        X_rescale = custom_range_for_CNN(X, output_range)                                              # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255]), and convert to numpy array
+        X_rescale = custom_range_for_CNN(X, output_range)                                           # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255]), and convert to numpy array
+        
+        if triplicate_channel:
+            X_rescale = np.repeat(X_rescale, repeats = 3, axis = -1)                                 # repeat the channels (last dimension) three times.  
                 
         data_mid = int(X_rescale.shape[0] / 2)                                                                                                                          # data before this number in one file, and after in another
         np.savez(f'step_05_merged_rescaled_data/data_file_{out_file:05d}.npz', X = X_rescale[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])           # save the first half of the data

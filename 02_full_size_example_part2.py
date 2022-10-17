@@ -137,123 +137,137 @@ opt_used = optimizers.Nadam(clipnorm = 1., clipvalue = 0.5)                     
 loss_class = losses.categorical_crossentropy                                                                                                      # good loss to use for classification problems, may need to switch to binary if only two classes though?
 loss_loc = losses.mean_squared_error                                                                                                              # loss for localisation
 
-vgg16_2head.compile(optimizer = opt_used, loss=[loss_class, loss_loc], loss_weights = fc_loss_weights)                                  
-
-train_generator_fc = numpy_files_sequence(data_files_train, batch_size = batch_size_b5)                                          # sequence using the training data
-validation_generator_fc = numpy_files_sequence(data_files_validate, batch_size = batch_size_b5)                                  # and validation data
-
-
-
-vgg16_2head_history = vgg16_2head.fit(train_generator_fc, epochs = n_epochs_fc, validation_data = validation_generator_fc,
-                                      shuffle = False)
-                                      
-
-#%%
-
-sys.exit()
-
-batch_metric_names = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']                             # all the metrics used in our model
-batch_metrics_fc = {}                                                                                                                  # dist to store metrics and their values for every batch
-for batch_metric_name in batch_metric_names:
-    batch_metrics_fc[batch_metric_name] = []
-
-
-# vgg16_2head.compile(optimizer = opt_used, metrics=batch_metric_names,                                                         # 
-#                     loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  
-
+vgg16_2head.compile(optimizer = opt_used, loss=[loss_class, loss_loc], loss_weights = fc_loss_weights,
+                    metrics = ['accuracy'])                                  
 
 try:
     plot_model(vgg16_2head, to_file=project_outdir / 'step_06_train_fully_connected_model' / 'vgg16_2head.png', show_shapes = True, show_layer_names = True)      # try to make a graphviz style image showing the complete model 
 except:
     print(f"Failed to create a .png of the model, but continuing anyway.  ")                               # this can easily fail, however, so simply alert the user and continue.  
 
+train_generator_fc = numpy_files_sequence(data_files_train, batch_size = batch_size_b5)                                          # sequence using the training data
+validation_generator_fc = numpy_files_sequence(data_files_validate, batch_size = batch_size_b5)                                  # and validation data
 
-
-    
-
+batch_metric_names = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']                             # all the metrics used in our model
+batch_metrics_fc = {}                                                                                                                  # dist to store metrics and their values for every batch
+for batch_metric_name in batch_metric_names:
+    batch_metrics_fc[batch_metric_name] = []
     
 batch_metrics_saver = save_batch_loss(batch_metric_names, batch_metrics_fc)                                                            # initiaite the callback to record metrics every batch
 epoch_saver = save_model_each_epoch(project_outdir / "step_06_train_fully_connected_model" / f"vgg16_2head_fc")       # also initiate the callback to save the model every epoch
 
-
-train_generator_fc = numpy_files_sequence(data_files_train, batch_size = batch_size_b5)                                          # sequence using the training data
-validation_generator_fc = numpy_files_sequence(data_files_validate, batch_size = batch_size_b5)                                  # and validation data
-
-
-
-
-sys.exit()
-
 vgg16_2head_history = vgg16_2head.fit(train_generator_fc, epochs = n_epochs_fc, validation_data = validation_generator_fc,
-                                      callbacks = [batch_metrics_saver, epoch_saver])                                         # train
-
+                                      shuffle = False, callbacks = [batch_metrics_saver, epoch_saver])                                  # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
+        
 plot_all_metrics(batch_metrics_fc, vgg16_2head_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs
                   'Fully connected network training', two_column = True,
-                  out_path = project_outdir / "step_05_train_fully_connected" / "fully_connected_training.png")
+                  out_path = project_outdir / "step_06_train_fully_connected_model" / "fully_connected_training.png")
 
 sys.exit()
-
-#%% Fine tune the model (including block 5)
-
-
-#block5_optimiser = optimizers.RMSprop(lr=block5_lr)                                      
-block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                                            # set the optimizer used in this training part.  Note have to set a learning rate manualy as an adaptive one (eg Nadam) would wreck model weights in the first few passes before it reduced.  
 
 #%%
 
 
 
-X_test, Y_class_test, Y_loc_test  = file_merger(data_files_test)                                 # Open the test data to RAM
+# batch_metric_names = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']                             # all the metrics used in our model
+# batch_metrics_fc = {}                                                                                                                  # dist to store metrics and their values for every batch
+# for batch_metric_name in batch_metric_names:
+#     batch_metrics_fc[batch_metric_name] = []
+
+
+# # vgg16_2head.compile(optimizer = opt_used, metrics=batch_metric_names,                                                         # 
+# #                     loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  
 
 
 
 
-if do_step_06:
-    
-    
-    # 6.1 deal with files
+
 
     
-    # 6.2 define, compile, and train the model
+
     
-    fc_model_input = Input(shape = vgg16_block_1to5.output_shape[1:])                                                 # the input to the fully connected model must be the same shape as the output of the 5th block of vgg16
-    output_class, output_loc = define_two_head_model(fc_model_input, len(synthetic_ifgs_settings['defo_sources']))    # build the full connected part of the model, and get the two model outputs
-    vgg16_2head_fc = Model(inputs=fc_model_input, outputs=[output_class, output_loc])                                 # define the model.  Input is the shape of vgg16 block 1 to 5 output, and there are two outputs (hence list)                                
-    plot_model(vgg16_2head_fc, to_file=project_outdir / 'step_06_train_fully_connected_model' / 'vgg16_2head_fc.png',                     # also plot the model.  This funtcion is known to be fragile due to Graphviz dependencies.  
-                show_shapes = True, show_layer_names = True)
+# batch_metrics_saver = save_batch_loss(batch_metric_names, batch_metrics_fc)                                                            # initiaite the callback to record metrics every batch
+# epoch_saver = save_model_each_epoch(project_outdir / "step_06_train_fully_connected_model" / f"vgg16_2head_fc")       # also initiate the callback to save the model every epoch
+
+
+# train_generator_fc = numpy_files_sequence(data_files_train, batch_size = batch_size_b5)                                          # sequence using the training data
+# validation_generator_fc = numpy_files_sequence(data_files_validate, batch_size = batch_size_b5)                                  # and validation data
+
+
+
+
+# sys.exit()
+
+# vgg16_2head_history = vgg16_2head.fit(train_generator_fc, epochs = n_epochs_fc, validation_data = validation_generator_fc,
+#                                       callbacks = [batch_metrics_saver, epoch_saver])                                         # train
+
+# plot_all_metrics(batch_metrics_fc, vgg16_2head_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs
+#                   'Fully connected network training', two_column = True,
+#                   out_path = project_outdir / "step_05_train_fully_connected" / "fully_connected_training.png")
+
+# sys.exit()
+
+# #%% Fine tune the model (including block 5)
+
+
+# #block5_optimiser = optimizers.RMSprop(lr=block5_lr)                                      
+# block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                                            # set the optimizer used in this training part.  Note have to set a learning rate manualy as an adaptive one (eg Nadam) would wreck model weights in the first few passes before it reduced.  
+
+# #%%
+
+
+
+# X_test, Y_class_test, Y_loc_test  = file_merger(data_files_test)                                 # Open the test data to RAM
+
+
+
+
+# if do_step_06:
     
-    opt_used = optimizers.Nadam(clipnorm = 1., clipvalue = 0.5)                                                       # adam with Nesterov accelerated gradient
-    vgg16_2head_fc.compile(optimizer = opt_used, loss=[loss_class, loss_loc],                                         # compile the model
-                            loss_weights = fc_loss_weights, metrics=['accuracy'])                                      # accuracy is useful to have on the terminal during training
+    
+#     # 6.1 deal with files
+
+    
+#     # 6.2 define, compile, and train the model
+    
+#     fc_model_input = Input(shape = vgg16_block_1to5.output_shape[1:])                                                 # the input to the fully connected model must be the same shape as the output of the 5th block of vgg16
+#     output_class, output_loc = define_two_head_model(fc_model_input, len(synthetic_ifgs_settings['defo_sources']))    # build the full connected part of the model, and get the two model outputs
+#     vgg16_2head_fc = Model(inputs=fc_model_input, outputs=[output_class, output_loc])                                 # define the model.  Input is the shape of vgg16 block 1 to 5 output, and there are two outputs (hence list)                                
+#     plot_model(vgg16_2head_fc, to_file=project_outdir / 'step_06_train_fully_connected_model' / 'vgg16_2head_fc.png',                     # also plot the model.  This funtcion is known to be fragile due to Graphviz dependencies.  
+#                 show_shapes = True, show_layer_names = True)
+    
+#     opt_used = optimizers.Nadam(clipnorm = 1., clipvalue = 0.5)                                                       # adam with Nesterov accelerated gradient
+#     vgg16_2head_fc.compile(optimizer = opt_used, loss=[loss_class, loss_loc],                                         # compile the model
+#                             loss_weights = fc_loss_weights, metrics=['accuracy'])                                      # accuracy is useful to have on the terminal during training
     
    
-    batch_metrics_fc = {}                                                                                                                  # dist to store metrics and their values for every batch
-    for batch_metric_name in batch_metric_names:
-        batch_metrics_fc[batch_metric_name] = []
+#     batch_metrics_fc = {}                                                                                                                  # dist to store metrics and their values for every batch
+#     for batch_metric_name in batch_metric_names:
+#         batch_metrics_fc[batch_metric_name] = []
         
-    batch_metrics_saver = save_batch_loss(batch_metric_names, batch_metrics_fc)                                                            # initiaite the callback to record metrics every batch
-    epoch_saver = save_model_each_epoch(project_outdir / "step_06_train_fully_connected_model" / f"vgg16_2head_fc")       # also initiate the callback to save the model every epoch
+#     batch_metrics_saver = save_batch_loss(batch_metric_names, batch_metrics_fc)                                                            # initiaite the callback to record metrics every batch
+#     epoch_saver = save_model_each_epoch(project_outdir / "step_06_train_fully_connected_model" / f"vgg16_2head_fc")       # also initiate the callback to save the model every epoch
     
     
-    train_generator = numpy_files_sequence(bottleneck_files_train, batch_size = batch_size_fc)                                          # sequence using the training data
-    validation_generator = numpy_files_sequence(bottleneck_files_validate, batch_size = batch_size_fc)                                  # and validation data
+#     train_generator = numpy_files_sequence(bottleneck_files_train, batch_size = batch_size_fc)                                          # sequence using the training data
+#     validation_generator = numpy_files_sequence(bottleneck_files_validate, batch_size = batch_size_fc)                                  # and validation data
     
     
-    vgg16_2head_fc_history = vgg16_2head_fc.fit(train_generator, epochs = n_epochs_fc, validation_data = validation_generator,
-                                                callbacks = [batch_metrics_saver, epoch_saver])                                         # train
+#     vgg16_2head_fc_history = vgg16_2head_fc.fit(train_generator, epochs = n_epochs_fc, validation_data = validation_generator,
+#                                                 callbacks = [batch_metrics_saver, epoch_saver])                                         # train
     
         
-    plot_all_metrics(batch_metrics_fc, vgg16_2head_fc_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs
-                      'Fully Connected network training', two_column = True, 
-                      out_path = project_outdir / "step_06_train_fully_connected_model" / "fully_connected_training.png")
+#     plot_all_metrics(batch_metrics_fc, vgg16_2head_fc_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs
+#                       'Fully Connected network training', two_column = True, 
+#                       out_path = project_outdir / "step_06_train_fully_connected_model" / "fully_connected_training.png")
     
-    print('\n\: Forward pass of the testing (bottleneck) data through the network:')
-    X_test_btln, Y_class_test_btln, Y_loc_test_btln  = file_merger(bottleneck_files_test)                                 # Open the test data to RAM
-    Y_class_test_cnn_btln, Y_loc_test_cnn_btln = vgg16_2head_fc.predict(X_test_btln, verbose = 1)                                    # predict class labels
+#     print('\n\: Forward pass of the testing (bottleneck) data through the network:')
+#     X_test_btln, Y_class_test_btln, Y_loc_test_btln  = file_merger(bottleneck_files_test)                                 # Open the test data to RAM
+#     Y_class_test_cnn_btln, Y_loc_test_cnn_btln = vgg16_2head_fc.predict(X_test_btln, verbose = 1)                                    # predict class labels
     
-    plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test_btln[:n_plot,], classes_predicted = Y_class_test_cnn_btln[:n_plot,],                    # plot all the testing data
-                                               locs = Y_loc_test_btln[:n_plot,],      locs_predicted = Y_loc_test_cnn_btln[:n_plot,], 
-                               source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Testing data (after step 07)')
+#     plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test_btln[:n_plot,], classes_predicted = Y_class_test_cnn_btln[:n_plot,],                    # plot all the testing data
+#                                                locs = Y_loc_test_btln[:n_plot,],      locs_predicted = Y_loc_test_cnn_btln[:n_plot,], 
+#                                source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Testing data (after step 07)')
 
     
 

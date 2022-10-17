@@ -90,7 +90,7 @@ print(f"\n\nSetting a random seed\n\n")
 np.random.seed(0)                                                                                           # 0 used in the example
 
 
-
+pdb.set_trace()
               
 #%% Import dependencies (paths set above)
 
@@ -295,6 +295,7 @@ open_datafile_and_plot(project_outdir / "step_04_augmented_labelled_volcnet_data
 
 #%% 5: Merge real and synthetic data, and rescale to desired range 
 
+from vudlnet21.file_handling import merge_and_rescale_data
 
 print("\nStep 04: Mergring the real and synthetic interferograms and rescaling to CNNs input range.")
 
@@ -306,6 +307,6 @@ if len(synthetic_data_files) > len(real_data_files):                            
 else:
     real_data_files = real_data_files[:len(synthetic_data_files)]                                                           # or if other is longer.  
 
-merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['input_range'])                                   # merge the real and synthetic data, and rescale it into the correct range for use with the CNN
+merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['input_range'], triplicate_channel = True)                                   # merge the real and synthetic data, and rescale it into the correct range for use with the CNN
 
-open_datafile_and_plot(project_outdir / "step_05_merged_rescaled_data" / "data_file_00000.npz", n_data = 15, window_title = ' 04 Sample of merged and rescaled data')
+open_datafile_and_plot(project_outdir / "step_05_merged_rescaled_data" / "data_file_00000.npz", n_data = 15, window_title = ' 05 Sample of merged and rescaled data')
