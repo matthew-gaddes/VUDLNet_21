@@ -10,66 +10,71 @@ import pdb
 
 #%%
 
-def plot_all_metrics(batch_metrics, epoch_metrics, metrics = None, title = 'Training metrics', two_column = False, out_path = None):
+def plot_all_metrics(batch_metrics, epoch_metrics, metrics = None, title = 'Training metrics', 
+                     two_column = False, out_path = None, y_epoch_start = 0):
     """ Given a dict of metrics for every batch and for every epoch, plot the combination of the two.  
     
     Inputs:
-        batch_metrics | dist of lists | names of metrics are keys and list of metrics values are items.  
-        epoch_metrics | dict of lists | standard metrics saved each epoch by Keras.  
+        batch_metrics | dist of lists | names of metrics are keys and list of metrics values are items.  There are as many entries as n_epochs * n _batches (i.e. for every batch that was used in training)
+        epoch_metrics | dict of lists | standard metrics saved each epoch by Keras.                       There are as many entries as n_epochs  
         metrics | None or list | names of metrics to plot (i.e. so we don't have to plot all fo them).  If None, just plot all.
         title | string | figure and window title.  
         two_column | boolean | If True, plots are in two columns.  
+        y_epoch_start | float | epoch number to start y values of plot on (i.e. to crop out very different values in first epoch).  Can be fractions of an epoch.  
     Returns:
         Figure
     History:
         2021_11_11 | MEG | Written
+        2022_11_01 | MEG | Update so that y limits are adjusted to avoid first epoch values that are very different to rest
         
     """
     
     import matplotlib.pyplot as plt    
     import numpy as np
         
-    if metrics is None:                                             # if no specific metrics are requested
-        metrics = list(batch_metrics.keys())                        # just get them all from the batch metrics
+    if metrics is None:                                                                                   # if no specific metrics are requested
+        metrics = list(batch_metrics.keys())                                                              # just get them all from the batch metrics
     
     n_losses_total = len(batch_metrics[list(batch_metrics.keys())[0]])
     n_epochs = len(epoch_metrics['loss'])
-    n_batches = int(n_losses_total / n_epochs)                       # get the number of entries in the first item of the batch_metrics (which is epochs x n_batches), then divided by epochs to get n_batches
+    n_batches = int(n_losses_total / n_epochs)                                                            # get the number of entries in the first item of the batch_metrics (which is epochs x n_batches), then divided by epochs to get n_batches
     n_metrics = len(metrics)
     
     if two_column == False:
-        fig1, axes = plt.subplots(n_metrics, 1, figsize = (18,8))                                           # many rows, one column
+        fig1, axes = plt.subplots(1, n_metrics, figsize = (28,7))                                           # many rows, one column
     else:
-        fig1, axes = plt.subplots(int(np.ceil(n_metrics/2)), 2, figsize = (18,10))                           # not tested, fewere rows, two columns
+        fig1, axes = plt.subplots(int(np.ceil(n_metrics/2)), 2, figsize = (14,7))                           # seems to wor, first bit works out how many rows we need.  
     fig1.canvas.manager.set_window_title(title)
     
-    xvals_batch = np.arange(0, n_losses_total)                                                # for every batch in every epoch
-    xvals_epoch = xvals_batch[::-1][::n_batches][::-1]
+    xvals_batch = np.arange(0, n_losses_total)                                                           # for every batch in every epoch, the xvalue to plot it at
+    xvals_epoch = xvals_batch[::-1][::n_batches][::-1]                                                      # for every epoch, the x value to plot it at (i.e. every n_epochs)
     
     
     for plot_n, metric in enumerate(metrics):
-        ax = np.ravel(axes)[plot_n]                                                 # get the ax to plot on
-        ax.scatter(xvals_batch, batch_metrics[metric], c = 'k', marker = '.', alpha = 0.5)             # plot for each batch
-        ax.scatter(xvals_epoch, epoch_metrics[metric], c = 'r', marker = 'o')             # plot for each epoch, odd method to get x value for end of each epoch
-        
+        ax = np.ravel(axes)[plot_n]                                                                     # get the ax to plot on
+        ax.scatter(xvals_batch, batch_metrics[metric], c = 'k', marker = '.', alpha = 0.5)              # plot for each batch
+        ax.scatter(xvals_epoch, epoch_metrics[metric], c = 'r', marker = 'o')                           # plot for each epoch
         ax.set_ylabel(metric)
         ax.grid(True)
-        ax.set_ylim(bottom = 0)
+
+        if 'accuracy' in metric:                                                                                        # accuracy should increase and can't get higher than 1.  Adjust lower limit
+            ax.set_ylim(bottom = batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]], top = 1)      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+        else:                                                                                                           # loss should decrease and can't get lower than 0.  Adjust upper limi.t  
+            ax.set_ylim(bottom = 0, top = (batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]]))      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
         ax.set_xlim(left = 0)
         
         if 'accuracy' in metric:                                                              # if accuracy is used in the metric, assume it's an accuracy and therefore
             ax.set_ylim(top = 1)                                                              # maxes out at 1
             
         ax.set_xticks(xvals_epoch)                                                            # change so a tick only after each epoch (and not each file)
-        ax.set_xticklabels(np.arange(0,n_epochs, 1))                                          # number ticks
+        ax.set_xticklabels(np.arange(1,n_epochs+1, 1))                                          # number ticks
         ax.set_xlabel('Epoch number')
     
-    #import pdb; pdb.set_trace()
     if two_column and (not (n_metrics/2).is_integer()):                                        # if its two column and we didn't have an even number of metrics, delete the bottom right (left over one)
         np.ravel(axes)[-1].set_visible(False)
         
     if out_path is not None:
-        fig1.savefig(out_path)                             # or with the title, if it's supplied 
+        fig1.savefig(out_path)                                                                   # 
 
 
 #%%
