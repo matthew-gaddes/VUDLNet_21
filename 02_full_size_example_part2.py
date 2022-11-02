@@ -46,22 +46,22 @@ cnn_settings = {'input_range'       : {'min':-1, 'max':1}}
 # step 06 (train the fully connected part of the network)
 batch_size                     = 25                                              # as data files have 500 in them, this divides in cleanly (i.e. no half batches).  Not tested in case that it doesn't divide in cleanly, perhaps last batch is just smaller and faster?  
 fc_loss_weights                   = [1., 1.]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-n_epochs_fc                       = 5#10                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+n_epochs_fc                       = 10                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 cnn_settings = {}
-cnn_settings['n_files_train']     = 20#70                                              # the number of files that will be used to train the network
+cnn_settings['n_files_train']     = 70                                              # the number of files that will be used to train the network
 cnn_settings['n_files_validate']  = 5                                              # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
 cnn_settings['n_files_test']      = 5                                               # the number of files held back for testing.  
+n_epoch_class = 4
+n_epoch_loc = 9
 
 
-#step 07: Build the best model from the two heads at different loss values.  
 
-
-
-# step 08 (fine-tune the 5th block and the fully connected part of the network):
-n_epochs_b5             = 10                                                                 # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
-block5_loss_weights = [0.05, 0.95]                                                  # as per fc_loss_weights, but by changing these more emphasis can be placed on either the clasification or localisation loss.  
-block5_lr = 1.5e-9                                                                  # a pretty important parameter.  We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
-#block5_lr = 1.0e-6                                                                  # a pretty important parameter.  We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
+# step 07 (fine-tune the 5th block and the fully connected part of the network):
+n_epochs_b5             = 5                                                           # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
+block5_loss_weights     = [0.05, 0.95]                                                # classification loss (e.g. 0.126) then localisation loss (e.g. 300) weighting
+block5_loss_weights     = [2000, 1]                                                # classification loss then localisation loss weighting
+block5_lr               = 1.e-5                                                                  # a pretty important parameter.  We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
+step_07_dir             = project_outdir / "step_07_fine_tune_training"
 
 # step 08: Predict on the testing data.  
 n_plot = 30                                                                         # number of test data to plot after and step 07
@@ -141,125 +141,71 @@ tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=str( project_outdi
                                                       , histogram_freq=1)
 
 
-vgg16_2head_history = vgg16_2head.fit(train_generator, epochs = n_epochs_fc, validation_data = validation_generator,
-                                      shuffle = False, callbacks = [batch_metrics_saver, epoch_saver, tensorboard_callback] ) # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
-                                      #max_queue_size = 4, workers = 4, use_multiprocessing = True)                                 # bit of a nightmare.     
+# vgg16_2head_history = vgg16_2head.fit(train_generator, epochs = n_epochs_fc, validation_data = validation_generator,
+#                                       shuffle = False, callbacks = [batch_metrics_saver, epoch_saver, tensorboard_callback] )      # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
+#                                       #max_queue_size = 4, workers = 4, use_multiprocessing = True)                                 # bit of a nightmare.     
 
-plot_all_metrics(batch_metrics_fc, vgg16_2head_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
-                  'Fully connected network training', two_column = False, y_epoch_start = 0.8,
-                  out_path = project_outdir / "step_06_train_fully_connected_model" / "fully_connected_training.png")        
+# plot_all_metrics(batch_metrics_fc, vgg16_2head_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
+#                   'Fully connected network training', two_column = False, y_epoch_start = 0.8,
+#                   out_path = project_outdir / "step_06_train_fully_connected_model" / "fully_connected_training.png")        
 
 
 vgg16_2head_step_06 = build_2head_from_epochs(vgg16_2head,  models_dir = project_outdir / "step_06_train_fully_connected_model",
-                                              n_epoch_class = 9, n_epoch_loc = 9, n_plot = 15, sources_names = synthetic_ifgs_settings['defo_sources'],
+                                              n_epoch_class = n_epoch_class, n_epoch_loc = n_epoch_loc, 
+                                              n_plot = 15, source_names = synthetic_ifgs_settings['defo_sources'],
                                               X_test = X_test, Y_class_test = Y_class_test, Y_loc_test = Y_loc_test)
 
-
-sys.exit()
-
-#%%
-
-
-Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head.predict(X_test, verbose = 1)                                                                         # predict class labels
-
-plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],                    # plot testing data
-                                           locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
-                           source_names = synthetic_ifgs_settings['defo_sources'], window_title = ' Real and synthetic testing data (after step 06)')
-
-
-#%% step 07:  Build the best model from the two heads after different amounts of training.  
-
-
-
-sys.exit()
-    
-
-#%%
-
-
-n_epoch_class = 1
-n_epoch_loc = 2
-
-class_model = keras.models.load_model(project_outdir / "step_06_train_fully_connected_model" / f"vgg16_2head_fc_epoch_{n_epoch_class:03d}.h5")
-loc_model = keras.models.load_model(project_outdir / "step_06_train_fully_connected_model" / f"vgg16_2head_fc_epoch_{n_epoch_loc:03d}.h5")
-
-#test = [layer.name for layer in class_model.layers]
-
-vgg16_2head_step_07 = keras.models.clone_model(vgg16_2head)
-# loc_layers = []
-# class_layers = []
-for layer in vgg16_2head_step_07.layers:
-    if layer.name[:3] == 'loc':
-        #loc_layers.append(layer.name)
-        vgg16_2head_step_07.get_layer(layer.name).set_weights(loc_model.get_layer(layer.name).get_weights())
-    if layer.name[:5] == 'class':
-        #class_layers.append(layer.name)
-        vgg16_2head_step_07.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
-        
-        
-
-Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head_step_07.predict(X_test, verbose = 1)                                    # predict class labels
-
-plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],                    # plot all the testing data
-                                           locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
-                           source_names = synthetic_ifgs_settings['defo_sources'], window_title = ' Real and synthetic testing data (after step 07)')
-        
-
-
-
+#vgg16_2head_step_06.evaluate(x = X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                  # check that model is being loaded correctly.  
 
 
 #%% Step 07: Fine-tune the 5th convolutional block and the fully connected network.  
 
-print(f"Starting to train the 5th block and fully connected network in parallel.  This will be significantly slower than the previous step "
-      f"as bottleneck files can no longer be used.  ")
+print(f"Fine-tuning the 5th block and fully connected network.  ")
 
+vgg16_2head_step_07 = keras.models.clone_model(vgg16_2head_step_06)                                     # deep copy of the model.  Note this doesn't include weights.  
+vgg16_2head_step_07.set_weights(vgg16_2head_step_06.get_weights())                                      # add weights to the new model
 
-vgg16_2head_step_08 = keras.models.clone_model(vgg16_2head_step_07)
+#layers_name = [layer.name for layer in vgg16_2head_step_07.layers]                                     # useful to check layer names.  
 
+for layer in vgg16_2head_step_07.layers[15:]:                                                           # unfreeze block 5 (and also all the fully connected bits, but they're already trainable)
+    layer.trainable = True    
 
-# vgg16_block_1to5 = VGG16(weights='imagenet', include_top=False, input_shape = (224,224,3))                                       # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define out own )
-# output_class, output_loc = define_two_head_model(vgg16_block_1to5.output, len(synthetic_ifgs_settings['defo_sources']))          # build the fully connected part of the model, and get the two model outputs
+#block5_optimiser = optimizers.RMSprop(lr=block5_lr)                                                    # not tested
+# block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                                         # not tested
+block5_optimiser = keras.optimizers.Adam(block5_lr)                                                     # seems to work?  
 
-# vgg16_2head = Model(inputs=vgg16_block_1to5.input, outputs=[output_class, output_loc])                                           # define the full model
-# vgg16_2head.load_weights(project_outdir / 'step_06_train_fully_connected_model' / f"vgg16_2head_fc_epoch_{(n_epochs_fc-1):03d}.h5", by_name = True)           # load the weights for the fully connected part which were trained in step 06 (by_name flag so that it doesn't matter that the models are different sizes))
-
-
-for layer in vgg16_2head.layers[:15]:                                                                                             # freeze blocks 1-4 (ie, we are only fine tuneing the 5th block and the fully connected part of the network)
-    layer.trainable = False    
-
-#block5_optimiser = optimizers.RMSprop(lr=block5_lr)                                      
-block5_optimiser = optimizers.SGD(lr=block5_lr, momentum=0.9)                                            # set the optimizer used in this training part.  Note have to set a learning rate manualy as an adaptive one (eg Nadam) would wreck model weights in the first few passes before it reduced.  
-vgg16_2head_step_08.compile(optimizer = block5_optimiser, metrics=['accuracy'],                                  # recompile as we've changed which layers can be trained/ optimizer etc.  
+vgg16_2head_step_07.compile(optimizer = block5_optimiser, metrics=['accuracy'],                         # recompile as we've changed which layers can be trained/ optimizer etc.  
                             loss=[loss_class, loss_loc], loss_weights = block5_loss_weights)                                  
 
-batch_metrics_b5 = {}                                                                                                                  # dist to store metrics and their values for every batch
+# print(f"Checking that the step 07 model retains the performance of step 06 before further training:")
+# vgg16_2head_step_07.evaluate(x = X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                       # check that model is being loaded correctly (i.e. that metrics are OK)
+
+batch_metrics_b5 = {}                                                                                         # dict to store metrics and their values for every batch
 for batch_metric_name in batch_metric_names:
     batch_metrics_b5[batch_metric_name] = []
     
-batch_metrics_saver = save_batch_loss(batch_metric_names, batch_metrics_b5)                                                    # initiaite the callback to record metrics every batch
-epoch_saver = save_model_each_epoch(project_outdir / "step_07_train_full_model" / f"vgg16_2head_fc")                     # also initiate the callback to save the model every epoch
+batch_metrics_saver = save_batch_loss(batch_metric_names, batch_metrics_b5)                            # initiaite the callback to record metrics every batch
+epoch_saver = save_model_each_epoch(step_07_dir / f"vgg16_2head_fc")                                   # also initiate the callback to save the model every epoch
 
 
+vgg16_2head_history_step_07 = vgg16_2head_step_07.fit(train_generator, epochs = n_epochs_b5, validation_data = validation_generator,
+                                                      shuffle = False, callbacks = [batch_metrics_saver, epoch_saver, tensorboard_callback])                 # train
 
-vgg16_2head_history = vgg16_2head_step_08.fit(train_generator, epochs = n_epochs_b5, validation_data = validation_generator,
-                                              callbacks = [batch_metrics_saver, epoch_saver])                                         # train
 
-plot_all_metrics(batch_metrics_b5, vgg16_2head_history.history, batch_metric_names[:4],                                             # plot metrics for all batches and epochs
+plot_all_metrics(batch_metrics_b5, vgg16_2head_history_step_07.history, batch_metric_names[:4],                                                              # plot metrics for all batches and epochs
                   'Block 5 and fully connected network training', two_column = False,
-                  out_path = project_outdir / "step_07_train_full_model" / "block5_training.png")
-
+                  out_path = step_07_dir / "block5_training.png")
 
 Y_class_test_cnn_8, Y_loc_test_cnn_8 = vgg16_2head_step_07.predict(X_test, verbose = 1)                                                                     # predict class labels
 
 plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn_8[:n_plot,],                            # plot all the testing data
                                               locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn_8[:n_plot,], 
                            source_names = synthetic_ifgs_settings['defo_sources'], window_title = ' Real and synthetic testing data (after step 08)')
-        
-
 
 
 #%% Step 08: Test with synthetic and real data
+
+sys.exit()
 
 print('\n\nStep 08: Forward pass of the testing real and synthetic data mix through the network:')
 

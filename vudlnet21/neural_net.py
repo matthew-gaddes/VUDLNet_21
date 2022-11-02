@@ -35,15 +35,13 @@ def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, X_tes
         2022_11_01 | MEG | Written
     
     """
-    
     import tensorflow.keras as keras
-    
     from vudlnet21.plotting import plot_data_class_loc_caller
     
     print(f"Loading the two models at the required epochs...", end = '')
     class_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_class:03d}.h5")          # load the best classification model
     loc_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_loc:03d}.h5")              # load the best localisation model
-    print(f"Done.  ")
+    print(f" Done.  ")
     
     #model = keras.models.clone_model(model)                                                                    # if you don't want to change the original model.  Would need to update remaining references to it though.  
     
@@ -53,13 +51,15 @@ def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, X_tes
         if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
             model.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
             
-
-    Y_class_test_cnn, Y_loc_test_cnn = model.predict(X_test, verbose = 1)                                                               # predict to make new Ys
+    print(f"Starting the forward pass of the training data:")
+    Y_class_test_cnn, Y_loc_test_cnn = model.predict(X_test, verbose = 1, batch_size = 15)                                                               # predict to make new Ys
     
+    print(f"Staring to plot the testing data...", end = '')
     plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],                    # plot some of the testing data.  
                                                locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
                                source_names = source_names, 
                                window_title = f"Real test data (step 06) - class_epoch:{n_epoch_class} loc_epoch:{n_epoch_loc}")
+    print(f" Done.  ")
     
     return model
             
@@ -77,6 +77,8 @@ class save_batch_loss(tf.keras.callbacks.Callback):
     def on_train_batch_end(self, batch, logs=None):
         for metric in self.metrics:           
             self.batch_metrics[metric].append(logs[metric])
+            
+            
 
 #%%
 

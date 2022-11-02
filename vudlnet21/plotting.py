@@ -58,9 +58,16 @@ def plot_all_metrics(batch_metrics, epoch_metrics, metrics = None, title = 'Trai
         ax.grid(True)
 
         if 'accuracy' in metric:                                                                                        # accuracy should increase and can't get higher than 1.  Adjust lower limit
-            ax.set_ylim(bottom = batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]], top = 1)      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+            if (y_epoch_start != 0) or (y_epoch_start != 0.):
+                ax.set_ylim(bottom = batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]], top = 1)      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+            else:
+                ax.set_ylim(top = 1)      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
         else:                                                                                                           # loss should decrease and can't get lower than 0.  Adjust upper limi.t  
-            ax.set_ylim(bottom = 0, top = (batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]]))      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+            if (y_epoch_start != 0) or (y_epoch_start != 0.):
+                ax.set_ylim(bottom = 0, top = (batch_metrics[metric][xvals_batch[int(y_epoch_start * n_batches)]]))      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+            else:
+                ax.set_ylim(bottom = 0 )      # set y limits, note that upper can be the value after a certain number of epochs (i.e. so can crop out the first high values)
+                
         ax.set_xlim(left = 0)
         
         if 'accuracy' in metric:                                                              # if accuracy is used in the metric, assume it's an accuracy and therefore
@@ -266,9 +273,7 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
     
     for n_plot in range(n_plots):                                           # loop through each plot arg (that is the number of ifgs to plot)
         axe = np.ravel(axes)[n_plot]                                        # convert axes to a rank 1 so that it's easy to index them as we loop through the plots
-        
-        
-        
+
         
         
         #1: Draw the ifg (each ifg has its own colourscale)
