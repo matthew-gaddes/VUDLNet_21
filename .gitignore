@@ -2,6 +2,7 @@ vudlnet21/__pycache__/*
 step_01_dem_data/volcano_dems.pkl
 step_02_synthetic_data/*.pkl
 step_03_labelled_volcnet_data/*.pkl
+step_03_labelled_volcnet_data_testing/*.pkl
 step_04_augmented_labelled_volcnet_data/*.pkl
 step_05a_merged_rescaled_data_synth_only/*.npz
 step_05_merged_rescaled_data/*.npz
