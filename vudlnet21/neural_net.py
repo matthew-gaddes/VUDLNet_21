@@ -11,7 +11,7 @@ import tensorflow as tf
 #%%
 
 
-def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, X_test, Y_class_test, Y_loc_test, source_names, n_plot = 15):
+def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, source_names = None, X_test = None, Y_class_test = None, Y_loc_test = None, n_plot = 15):
     """
     The performance of each head of a two headed model may be best at different epochs for different heads.  
     Merge the two heads to create the optimal model.  
@@ -51,34 +51,23 @@ def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, X_tes
         if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
             model.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
             
-    print(f"Starting the forward pass of the training data:")
-    Y_class_test_cnn, Y_loc_test_cnn = model.predict(X_test, verbose = 1, batch_size = 15)                                                               # predict to make new Ys
-    
-    print(f"Staring to plot the testing data...", end = '')
-    plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],                    # plot some of the testing data.  
-                                               locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
-                               source_names = source_names, 
-                               window_title = f"Real test data (step 06) - class_epoch:{n_epoch_class} loc_epoch:{n_epoch_loc}")
-    print(f" Done.  ")
+    if X_test != None:
+        print(f"Starting the forward pass of the testing data:")
+        Y_class_test_cnn, Y_loc_test_cnn = model.predict(X_test, verbose = 1, batch_size = 15)                                                               # predict to make new Ys
+        
+        print(f"Staring to plot the testing data...", end = '')
+        plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],                    # plot some of the testing data.  
+                                                   locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
+                                   source_names = source_names, 
+                                   window_title = f"Test data - class_epoch:{n_epoch_class} loc_epoch:{n_epoch_loc}")
+        print(f" Done.  ")
+    else:
+        print(f"No test data provided.  ")
     
     return model
             
     
-
-#%%
-
-
-class save_batch_loss(tf.keras.callbacks.Callback):
-    
-    def __init__(self, metrics, batch_metrics):                                          # constructor
-        self.metrics = metrics
-        self.batch_metrics = batch_metrics
-        
-    def on_train_batch_end(self, batch, logs=None):
-        for metric in self.metrics:           
-            self.batch_metrics[metric].append(logs[metric])
-            
-            
+       
 
 #%%
 
@@ -143,61 +132,6 @@ class numpy_files_sequence(tf.keras.utils.Sequence):                            
         X_batch = self.X[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
         Y_class = self.Y_class[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
         Y_loc = self.Y_loc[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
-        
-        return X_batch, [Y_class, Y_loc]
-
-
-
-#%%
-
-class numpy_files_sequence_old(tf.keras.utils.Sequence):                                                                                  # inheritance not tested like ths.  
-    """A data generator for use with .npz files that contains X, Y_class, and Y_loc.  Can be used with either training, validation, or testing data.  
-    Key methods:
-            __len__                 to get the number of batches to pass all the data through (i.e. for one epoch)                        
-            __getitem__             to get a batch of data.  
-    If built correctly, it should guarantee that each sample is only used once per epoch.  
-    """
-        
-    def __init__(self, file_list, batch_size):                                          # constructor
-        """
-        Inputs:
-            file_list | list of strings or paths | locations of numpy files of data.  
-            batch_size | int | number of data for each batch.  Note tested if larger than the number of data in a single file.  
-        """
-        self.file_list = file_list
-        self.batch_size = batch_size
-
-    def __len__(self):                                                      # number of batches in an epoch
-        """As one large file (e.g. 1000 data) can't be used as a batch on a GPU (but maybe on a CPU?), we will break each 
-        file into n_batches_per_file.  Therefore, the total number of batches (per epoch) will be n_files x n_batches"""
-        
-        import numpy as np
-        n_files = len(self.file_list)                                                           # get the number of data files.  
-        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                              # get the number of data in a file (assumed to be the same for all files)
-        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))                    # the number of batches required to cover every data in the file.  
-        n_batches = n_files * n_batches_per_file
-        return n_batches
-
-    def __getitem__(self, idx):                                             # iterates over the data and returns a complete batch, index is a number upto the number of batches set by __len__, with each number being used once but in a random order.  
-        
-        import numpy as np
-        # repeat of __len__ to get info about batch sizes etc, probably a better way to do this.  
-        n_files = len(self.file_list)                                                      # get the number of data files.  
-        n_data_per_file = np.load(self.file_list[0])['X'].shape[0]                         # get the number of data in a file (assumed to be the same for all files)
-        n_batches_per_file = int(np.ceil(n_data_per_file / self.batch_size))               # the number of batches required to cover every data in the file.  
-        n_batches = n_files * n_batches_per_file
-        
-        # deal with files and batches (convert idx to a file number and batch number).  
-        n_file, n_batch = divmod(idx, n_batches_per_file)                                   # idx tells us which batch (of the total number of batches from __len__), but that needs mapping to a file, and to which batch in that file.  
-                                                                                            # divmod returns the quotient (file_n), and the remainder (batch from that file)
-        data = np.load(self.file_list[n_file])                                              # load the correct numpy file.  
-        X = data['X']                                                                       # eOpen the correct data file
-        Y_class = data['Y_class']
-        Y_loc = data['Y_loc']
-        
-        X_batch = X[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
-        Y_class = Y_class[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
-        Y_loc = Y_loc[n_batch*self.batch_size : (n_batch+1) *self.batch_size, ]
         
         return X_batch, [Y_class, Y_loc]
 

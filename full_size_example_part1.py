@@ -77,20 +77,18 @@ synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def']
 
 #step 03 (load real data and augment):
 volcnet_def_min = 0.05                                                                          # in m, real ifg must have a signal bigger than this to be classed as deformation.  
-file_batch_size = 27
+file_batch_size = 27                                                                            # number of files to open and merge at one time.  Depends on amount of RAM available. 
 augmentation_factor = 2                                                                        # factor to augment by.  E.g. if set to 10 and there are 30 data, there will be 300 augmented data.
+n_files_test = 2
                                                                                                    # v2 data has ? ifgs, so ? x 89 ~ 20000 etc.  
 
 # step 04 (merge synthetic and real, and rescale to desired range)
 cnn_settings = {'input_range'       : {'min':-1, 'max':1}}
 
 
-
 print(f"\n\nSetting a random seed\n\n")   
 np.random.seed(0)                                                                                           # 0 used in the example
 
-
-pdb.set_trace()
               
 #%% Import dependencies (paths set above)
 
@@ -232,7 +230,7 @@ volcnet_files = sorted(glob.glob(dependency_paths['volcnet'] +  '/*.pkl'))      
 # print(f"only using some of the VolcNet files! ")
 # volcnet_files = itemgetter(1,2,13)(volcnet_files)
 
-labels_dyke, labels_sill, labels_atmo = label_volcnet_files(volcnet_files, def_min = volcnet_def_min)                          # label all the VolcNet data - slow! 
+labels_dyke, labels_sill, labels_atmo = label_volcnet_files(volcnet_files, def_min = volcnet_def_min)               # label all the VolcNet data - slow! 
 plot_volcnet_files_labels(volcnet_files, labels_dyke, labels_sill, labels_atmo)                                     # figure with two subplots showing how many of each label etc.  
 n_min_real = np.min([labels_dyke.shape[0], labels_sill.shape[0], labels_atmo.shape[0]])                             # get the minimum number of data in a class
 
@@ -259,16 +257,30 @@ create_volcnet_ifgs(labels_all, volcnet_files, project_outdir / "step_03_labelle
 
 #open_datafile_and_plot(project_outdir / "step_03_labelled_volcnet_data" /  "data_file_unshuffled_00015.pkl", n_data = 15, window_title = '03 Sample of augmented real data')
 
-unshuffled_files = sorted(glob.glob(str(project_outdir / "step_03_labelled_volcnet_data" / '*.pkl')))            # get the paths to the volcnet file.      
-shuffle_data_pkls(unshuffled_files, file_batch_size, outdir = project_outdir / "step_03_labelled_volcnet_data" )                                                                 # 2nd arg is number of files to be opened at once.  Big number needs lots of RAM
-open_datafile_and_plot(project_outdir / "step_03_labelled_volcnet_data" /  "data_file_shuffled_00000.pkl", n_data = 45, window_title = '03 Sample of VolcNet data')        
+
+unshuffled_files = sorted(glob.glob(str(project_outdir / "step_03_labelled_volcnet_data" / '*.pkl')))                                           # get the paths to the volcnet file.      
+shuffle_data_pkls(unshuffled_files, file_batch_size, outdir = project_outdir / "step_03_labelled_volcnet_data" )                               # 2nd arg is number of files to be opened at once.  Big number needs lots of RAM
+open_datafile_and_plot(project_outdir / "step_03_labelled_volcnet_data" /  "data_file_shuffled_00000.pkl", 
+                       n_data = 45, window_title = '03 Sample of VolcNet data')        
+
+
+# Separate some files for testing.  
+shuffled_files = sorted(glob.glob(str(project_outdir / "step_03_labelled_volcnet_data" / '*.pkl')))            # get the paths to the  shuffled volcnet file.      
+test_files = shuffled_files[-n_files_test:]
+for test_file in test_files:
+    parts = list(Path(test_file).parts)
+    outfile = project_outdir / "step_03_labelled_volcnet_data_testing" / parts[-1]
+    shutil.move(test_file, outfile)
+open_datafile_and_plot(project_outdir / "step_03_labelled_volcnet_data_testing" /  "data_file_shuffled_00026.pkl", n_data = 180, window_title = '03 Sample of VolcNet testing data')        
+
+
+
 
 
 #%% Step 04: Augment the real data.  
 
 
 from vudlnet21.augmentation import augment_data
-
 
 labelled_volcnet_files = sorted(glob.glob(str(project_outdir / "step_03_labelled_volcnet_data" /  f"*.pkl")))                                              # get the paths to each file of real data
 
@@ -310,3 +322,17 @@ else:
 merge_and_rescale_data(synthetic_data_files, real_data_files, cnn_settings['input_range'], triplicate_channel = True)                                   # merge the real and synthetic data, and rescale it into the correct range for use with the CNN
 
 open_datafile_and_plot(project_outdir / "step_05_merged_rescaled_data" / "data_file_00000.npz", n_data = 15, window_title = ' 05 Sample of merged and rescaled data')
+
+
+#%% 5a: Rescale only the synthetic data
+
+from vudlnet21.file_handling import rescale_data
+
+synthetic_data_files = sorted(glob.glob(str(project_outdir / "step_02_synthetic_data" / f"*.pkl")))                       # get the paths to each file of synthetic data
+
+rescale_data(synthetic_data_files, project_outdir / "step_05a_merged_rescaled_data_synth_only",
+             cnn_settings['input_range'], triplicate_channel = True)
+    
+open_datafile_and_plot(project_outdir / "step_05a_merged_rescaled_data_synth_only" / "data_file_00000.npz", n_data = 15, window_title = ' 05 Sample of merged and rescaled data - synthetic only')    
+    
+

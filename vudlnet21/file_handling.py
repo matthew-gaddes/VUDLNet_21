@@ -11,6 +11,63 @@ import pdb
 #%%
 
 
+def rescale_data(data_files, outdir, output_range = {'min':0, 'max':225}, triplicate_channel = False):
+    """ Given a list of synthetic data files and real data files (usually the augmented real data),
+    
+    Inputs:
+        data_files           | list of Paths or string | locations of the .pkl files containing the masked arrays
+        outdir               | pathlib Path            | directory to save numpy files.  
+        output_range         | dict                    | min and maximum of each channel in each image.  Should be set to suit the CNN being used.  
+        triplicate_channel   | Boolean                  | Data are saved as rank 4 (n_data, ny, nx, n_chanels), and this option repeates the channel data 3 times. 
+                                                          Useful if we have one channel data but want to use it with an RGB triple channel model.  
+    Returns:
+        .npz files in step_04_merged_rescaled_data
+    History:
+        2020_10_29 | MEG | Written
+        2021_01_06 | MEG | Fix bug in that mixed but not rescaled data was being written to the numpy arrays.  
+        2022_10_17 | MEG | Add option to repeat data across 3 channels.  
+
+    """
+    import pickle
+    import numpy as np
+    import numpy.ma as ma
+    
+    from deep_learning_tools.data_handling import custom_range_for_CNN
+    
+    n_files = len(data_files)        
+    out_file = 0
+    for n_file in range(n_files):
+        print(f'    Opening file {n_file}... ', end = '')
+        with open(data_files[n_file], 'rb') as f:                                                      # open the real data file
+            X = pickle.load(f)
+            Y_class = pickle.load(f)
+            Y_loc = pickle.load(f)
+        f.close()    
+        
+
+        mix_index = np.arange(0, X.shape[0])                                                        # mix them, get a lis of arguments for each data 
+        np.random.shuffle(mix_index)                                                                # shuffle the arguments
+        X = X[mix_index,]                                                                           # reorder the data using the shuffled arguments
+        Y_class = Y_class[mix_index]                                                                # reorder the class labels
+        Y_loc = Y_loc[mix_index]                                                                    # and the location labels
+
+        X_rescale = custom_range_for_CNN(X, output_range)                                           # resacle the data from metres/rads etc. to desired input range of cnn (e.g. [0, 255]), and convert to numpy array
+        
+        if triplicate_channel:
+            X_rescale = np.repeat(X_rescale, repeats = 3, axis = -1)                                 # repeat the channels (last dimension) three times.  
+                
+        data_mid = int(X_rescale.shape[0] / 2)                                                                                                                          # data before this number in one file, and after in another
+        np.savez(outdir / f"data_file_{out_file:05d}.npz", X = X_rescale[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])           # save the first half of the data
+        out_file += 1                                                                                                                                                   # after saving once, update
+        print('Done.  ')
+        
+      
+  
+
+
+#%%
+
+
 def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225},
                            triplicate_channel = False):
     """ Given a list of synthetic data files and real data files (usually the augmented real data),
@@ -95,7 +152,9 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
         out_file += 1                                                                                                                                                   # and after saving again, update again.  
         print('Done.  ')
         
-        
+      
+    
+      
 
 #%%
 
@@ -114,24 +173,41 @@ def file_merger(files):
     
     """
     import numpy as np
+    import numpy.ma as ma
+    import pickle
+    from pathlib import Path
     
-    def open_synthetic_data_npz(name_with_path):
-        """Open a file data file """  
-        data = np.load(name_with_path)
-        X = data['X']
-        Y_class = data['Y_class']
-        Y_loc = data['Y_loc']
-        return X, Y_class, Y_loc
+    # def open_synthetic_data_npz(name_with_path):
+    #     """Open a file data file """  
+    #     data = np.load(name_with_path)
+    #     X = data['X']
+    #     Y_class = data['Y_class']
+    #     Y_loc = data['Y_loc']
+    #     return X, Y_class, Y_loc
 
     n_files = len(files)
     
     for i, file in enumerate(files):
-        X_batch, Y_class_batch, Y_loc_batch = open_synthetic_data_npz(file)
+        file = Path(file)
+        if file.suffix == '.pkl':                                                          # if it's a .pkl
+            with open(file, 'rb') as f:                                                    # open the file
+                X_batch = pickle.load(f)                                                              # and extract data (X) and labels (Y)
+                Y_class_batch = pickle.load(f)
+                Y_loc_batch = pickle.load(f)
+            f.close()
+        elif file.suffix == '.npz':                                                        # if it's a npz
+            data = np.load(file)                                                           # load it
+            X_batch = data['X']                                                                       # and extract data (X) and labels (Y)
+            Y_class_batch = data['Y_class']
+            Y_loc_batch = data['Y_loc']
+        
+        
+        # X_batch, Y_class_batch, Y_loc_batch = open_synthetic_data_npz(file)
         if i == 0:
             n_data_per_file = X_batch.shape[0]
-            X = np.zeros((n_data_per_file * n_files, X_batch.shape[1], X_batch.shape[2], X_batch.shape[3]))      # initate array, rank4 for image, get the size from the first file
-            Y_class = np.zeros((n_data_per_file  * n_files, Y_class_batch.shape[1]))                              # should be flexible with class labels or one hot encoding
-            Y_loc = np.zeros((n_data_per_file * n_files, 4))                                                     # four columns for bounding box
+            X = ma.zeros((n_data_per_file * n_files, X_batch.shape[1], X_batch.shape[2], X_batch.shape[3]))      # initate array, rank4 for image, get the size from the first file
+            Y_class = ma.zeros((n_data_per_file  * n_files, Y_class_batch.shape[1]))                              # should be flexible with class labels or one hot encoding
+            Y_loc = ma.zeros((n_data_per_file * n_files, 4))                                                     # four columns for bounding box
             
         
         X[i*n_data_per_file:(i*n_data_per_file)+n_data_per_file,:,:,:] = X_batch
