@@ -10,3 +10,4 @@ step_06a_train_fully_connected_model_synth_only/*.h5
 step_06_train_fully_connected_model/*.h5
 step_07a_fine_tune_training_synth_only/*.h5
 step_07_fine_tune_training/*.h5
+step_08_final_models/*
