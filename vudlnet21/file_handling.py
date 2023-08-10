@@ -11,6 +11,86 @@ import pdb
 #%%
 
 
+def shuffle_data_pkls(unshuffled_files, file_batch_size, outdir):
+    """ Given a direcotry of unshuffled data that is split into files that cannot all be loaded into RAM at once, shuffle by opening 
+    a subset of them at a time and shuffling them.  
+    
+    For a more complete shuffle, this function can be called multiple times on the results of itself.  
+    
+    Inputs:
+        unshuffld_files | list of strings | paths to unshuffled files.  
+        file_batch_size | int | number of files in one batch.  Bigger is better, but will eventually max out machine RAM.  
+        outdir | pathlib Path | our directory for shuffled files.  
+        
+    Returns:
+        shuffled files.  
+        
+    History:
+        2022_10_11 | MEG | Written.  
+        
+    
+    
+    """
+    import random
+    import numpy as np
+    import numpy.ma as ma
+    import pickle
+    import os
+
+    
+    random.shuffle(unshuffled_files)                                                            # shuffle the items in the list (this doesn't actually shuffle the data in the files though, so still called unshuffled)
+
+    if len(unshuffled_files) % file_batch_size != 0:
+        raise Exception(f"This function has not been tested with batch sizes that do not divide exactly into the number of files.  "
+                        f"({len(unshuffled_files)} were detected, batches were {file_batch_size}, producing a {int(len(unshuffled_files) / file_batch_size)} batches and a remainder of {len(unshuffled_files) % file_batch_size})  "
+                        f"Exiting.")
+    else:
+        n_batches = int(len(unshuffled_files) / file_batch_size)
+    
+    # get some info about the data by opening the first file.  
+    with open(unshuffled_files[0], 'rb') as f:                                                    # open the file
+        X = pickle.load(f)
+    n_per_file, ny, nx, _ = X.shape
+    
+    # loop through opening file_batch_size files at once. (e.g. 10 files are opened and the contents shuffled)
+    file_n = 0
+    for i in range(n_batches):
+        unshuffled_batch_files = unshuffled_files[i * file_batch_size: (i+1)*file_batch_size]                           # 
+    
+        X = ma.zeros((file_batch_size * n_per_file, ny, nx, 1))               # initialise, rank 4 ready for Tensorflow, last dimension is being used for different crops.  
+        Y_class = np.zeros((file_batch_size * n_per_file, 3))                                                                             # initialise, doesn't need another dim as label is the same regardless of the crop.  
+        Y_loc = np.zeros((file_batch_size * n_per_file, 4))                                                                            # initialise
+        
+        for file_n_batch, unshuffled_batch_file in enumerate(unshuffled_batch_files):
+            with open(unshuffled_batch_file, 'rb') as f:                                                    # open the file
+                print(f"Opening file {unshuffled_batch_file}.")
+                X[file_n_batch * n_per_file : (file_n_batch+1) * n_per_file, ]  = pickle.load(f)                                                              # and extract data (X) and labels (Y)
+                Y_class[file_n_batch * n_per_file : (file_n_batch+1) * n_per_file, ] = pickle.load(f)
+                Y_loc[file_n_batch * n_per_file : (file_n_batch+1) * n_per_file, ] = pickle.load(f)
+            os.remove(unshuffled_batch_file)
+        
+        # do the shuffling        
+        args = np.arange(0, X.shape[0])
+        random.shuffle(args)
+        X = X[args,]
+        Y_class = Y_class[args,]
+        Y_loc = Y_loc[args,]
+        
+        # save parts of the large shuffled array into separate files.  
+        for file_n_batch in range(file_batch_size):
+            print(f"    Saving shuffled file {file_n}")
+            with open(outdir / f"data_file_shuffled_{file_n:05d}.pkl", 'wb') as f:                     # save the output as a pickle
+                pickle.dump(X[file_n_batch * n_per_file : (file_n_batch+1) * n_per_file, ], f)
+                pickle.dump(Y_class[file_n_batch * n_per_file : (file_n_batch+1) * n_per_file, ], f)
+                pickle.dump(Y_loc[file_n_batch * n_per_file : (file_n_batch+1) * n_per_file, ], f)
+            file_n += 1
+           
+
+
+
+#%%
+
+
 def rescale_data(data_files, outdir, output_range = {'min':0, 'max':225}, triplicate_channel = False):
     """ Given a list of synthetic data files and real data files (usually the augmented real data),
     

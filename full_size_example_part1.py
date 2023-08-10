@@ -50,17 +50,9 @@ SRTM_dem_settings = {'SRTM1_or3'                : 'SRTM3',                      
                      'side_length'              : 40e3}                                         # the side length in metres of the DEM.  To allow for different crops of this, it should be somewhat bigger than 224 (the number of pixels) x 90 (pixel size) ~ 20e3
 n_volcanoes_used = 512                                                                            # there are 512 volcanoes in the Smithsonian file, but to speed up making the DEMS not all of these need to be used.   
 
-#step 02 (making synthetic interferograms):
-# test
-# ifg_settings            = {'n_per_file'         : 10}                                            # number of ifgs per data file.  
-# synthetic_ifgs_n_files  =  4                                                                   # numer of files of synthetic data
-
-# real - 20,000 data    
+#step 02 (making 20000 synthetic interferograms):
 ifg_settings            = {'n_per_file'         : 500}                                            # number of ifgs per data file.  
 synthetic_ifgs_n_files  =  40                                                                   # numer of files of synthetic data
-
-
-
 
 synthetic_ifgs_settings = {'defo_sources'           : ['dyke', 'sill', 'no_def'],               # deformation patterns that will be included in the dataset.  
                            'n_ifgs'                 : ifg_settings['n_per_file'],               # the number of synthetic interferograms to generate PER FILE
@@ -92,9 +84,10 @@ np.random.seed(0)                                                               
               
 #%% Import dependencies (paths set above)
 
-from vudlnet21.file_handling import open_smithsonian_csv_file, merge_and_rescale_data
+from vudlnet21.file_handling import open_smithsonian_csv_file, merge_and_rescale_data, shuffle_data_pkls
 from vudlnet21.plotting import plot_data_class_loc_caller, open_datafile_and_plot
-#from vudlnet21.neural_net import augment_data, choose_for_augmentation, merge_and_rescale_data, define_two_head_model, file_list_divider, file_merger
+from vudlnet21.augmentation import augment_data
+
 
 
 sys.path.append(dependency_paths['srtm_dem_tools'])
@@ -107,7 +100,7 @@ from syinterferopy.random_generation import create_random_synthetic_ifgs        
 
 sys.path.append(dependency_paths['deep_learning_tools'])
 import deep_learning_tools
-from deep_learning_tools.file_handling import shuffle_data_pkls
+#from deep_learning_tools.file_handling import 
 
 
 sys.path.append(dependency_paths['volcnet'])
@@ -279,9 +272,6 @@ open_datafile_and_plot(project_outdir / "step_03_labelled_volcnet_data_testing" 
 
 #%% Step 04: Augment the real data.  
 
-
-from vudlnet21.augmentation import augment_data
-
 labelled_volcnet_files = sorted(glob.glob(str(project_outdir / "step_03_labelled_volcnet_data" /  f"*.pkl")))                                              # get the paths to each file of real data
 
 file_n = 0
@@ -307,7 +297,7 @@ open_datafile_and_plot(project_outdir / "step_04_augmented_labelled_volcnet_data
 
 #%% 5: Merge real and synthetic data, and rescale to desired range 
 
-from vudlnet21.file_handling import merge_and_rescale_data
+
 
 print("\nStep 04: Mergring the real and synthetic interferograms and rescaling to CNNs input range.")
 

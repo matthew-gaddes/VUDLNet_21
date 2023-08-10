@@ -67,22 +67,7 @@ def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, sourc
     return model
             
     
-       
-
-#%%
-
-class save_model_each_epoch(tf.keras.callbacks.Callback):
-        
-    def __init__(self, output_path):
-        self.output_path = output_path
-    
-    def on_epoch_end(self, epoch, logs={}):                                                                 # overwrite the on_epoch_end default metho in the callback class.  
-        from pathlib import Path
-        print(f"Saving the model at the end of epoch {epoch:03d}")
-        path_parts = list(self.output_path.parts)
-        path_parts[-1] = f"{path_parts[-1]}_epoch_{epoch:03d}.h5"
-        output_path = Path(*path_parts)
-        self.model.save(output_path)                  # 
+   
 
 #%%
 

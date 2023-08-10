@@ -27,7 +27,7 @@ from tensorflow.keras import Input, Model
 from tensorflow.keras import losses, optimizers
 from tensorflow.keras.utils import plot_model
 
-from vudlnet21.neural_net import define_two_head_model, numpy_files_sequence, save_model_each_epoch, build_2head_from_epochs
+from vudlnet21.neural_net import define_two_head_model, numpy_files_sequence, build_2head_from_epochs
 from vudlnet21.plotting import plot_data_class_loc_caller
 from vudlnet21.file_handling import file_merger
 
@@ -38,59 +38,58 @@ from vudlnet21.file_handling import file_merger
 
 
 
-dependency_paths = {'deep_learning_tools'   : '/home/matthew/university_work/20_deep_learning_tools'}                                      # Available from Github: https://github.com/matthew-gaddes/Deep-Learning-Tools
+dependency_paths = {#'deep_learning_tools'   : '/home/matthew/university_work/20_deep_learning_tools'}                                      # Available from Github: https://github.com/matthew-gaddes/Deep-Learning-Tools
+                    'deep_learning_tools'     : '/home/matthew/university_work/15_my_software_releases/Deep-Learning-Tools-1.2.0'}
 
 # settings that need to be the same as part 1
-project_outdir = Path('./')
+project_outdir          = Path('./')
 synthetic_ifgs_settings = {'defo_sources' : ['dyke', 'sill', 'no_def']}               # deformation patterns that will be included in the dataset.  
-cnn_settings = {'input_range'       : {'min':-1, 'max':1}}
-batch_metric_names = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']                  # all the metrics used in our model
+cnn_settings            = {'input_range'       : {'min':-1, 'max':1}}
+batch_metric_names      = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']                  # all the metrics used in our model
 
 # shared training settings:
-batch_size                        = 100                                              # works on Nvidia GTX 1070 
-block5_lr               = 1.e-5                                                                  # We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
+batch_size       = 100                                              # works on Nvidia GTX 1070 
+block5_lr        = 1.e-5                                                                  # We have to set a learning rate manually as an adaptive approach (e.g. NADAM) will be high initially, and therefore make large updates that will wreck the model (as we're just fine-tuning a model so have something good to start with)
 block5_optimiser = keras.optimizers.Adam(block5_lr)                                                     # seems to work?  
-n_plot = 15
+n_plot           = 45
 
 # Option 1:
-# synth_only = True
-# cnn_settings['n_files_train']     = 35                                              # the number of files that will be used to train the network
-# cnn_settings['n_files_validate']  = 3                                              # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
-# cnn_settings['n_files_test']      = 1                                               # the number of files held back for testing.  
-# step_06_dir             = project_outdir / "step_06a_train_fully_connected_model_synth_only"
-# fc_train_step_06                  = False
-# fc_n_epochs                       = 50                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
-# fc_loss_weights                   = [1000, 1]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-# fc_n_epoch_class           = 10
-# fc_n_epoch_loc             = 42                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
-# step_07_dir             = project_outdir / "step_07a_fine_tune_training_synth_only"
-# ft_train_step_07          = False
-# ft_n_epochs             = 50                                                        # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
-# ft_loss_weights     = [10, 1]                                                # classification loss (e.g. 0.126) then localisation loss (e.g. 300) weighting
-# ft_n_epoch_class           = 42
-# ft_n_epoch_loc             = 45                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
-
-# Option 2:
-synth_only = False
-cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
-cnn_settings['n_files_validate']  = 5                                              # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
-cnn_settings['n_files_test']      = 0                                               # the number of files held back for testing.      
-step_06_dir                       = project_outdir / "step_06_train_fully_connected_model"
+synth_only                        = True
+cnn_settings['n_files_train']     = 35                                              # the number of files that will be used to train the network
+cnn_settings['n_files_validate']  = 3                                              # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
+cnn_settings['n_files_test']      = 1                                               # the number of files held back for testing.  
+step_06_dir                       = project_outdir / "step_06a_train_fully_connected_model_synth_only"
 fc_train_step_06                  = False
-fc_n_epochs                       = 25                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+fc_n_epochs                       = 100                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 fc_loss_weights                   = [1000, 1]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-fc_n_epoch_class                  = 6
-fc_n_epoch_loc                    = 16                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
-step_07_dir                       = project_outdir / "step_07_fine_tune_training"
+fc_n_epoch_class                  = 7
+fc_n_epoch_loc                    = 38                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
+step_07_dir                       = project_outdir / "step_07a_fine_tune_training_synth_only"
 ft_train_step_07                  = False
-ft_n_epochs                       = 25                                                        # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
+ft_n_epochs                       = 50                                                        # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
 ft_loss_weights                   = [10, 1]                                                # classification loss (e.g. 0.126) then localisation loss (e.g. 300) weighting
-ft_n_epoch_class                  = 11
-ft_n_epoch_loc                    = 17                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
+ft_n_epoch                        = 26                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
 
-# End options
+# # Option 2:
+# synth_only                        = False
+# cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
+# cnn_settings['n_files_validate']  = 5                                              # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
+# cnn_settings['n_files_test']      = 0                                               # the number of files held back for testing.      
+# step_06_dir                       = project_outdir / "step_06_train_fully_connected_model"
+# fc_train_step_06                  = False
+# fc_n_epochs                       = 25                                                                    # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+# fc_loss_weights                   = [1000, 1]                                                      # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+# fc_n_epoch_class                  = 6
+# fc_n_epoch_loc                    = 12                                                                        # if 15 epochs and start at 0, highest epoch number is 14 as python starts at 0.  
+# step_07_dir                       = project_outdir / "step_07_fine_tune_training"
+# ft_train_step_07                  = False
+# ft_n_epochs                       = 25                                                        # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
+# ft_loss_weights                   = [10, 1]                                                # classification loss (e.g. 0.126) then localisation loss (e.g. 300) weighting
+# ft_n_epoch                        = 13                                                          # best loss for localisation, good loss for combined.  
 
 
+#End options
+step_08_dir = project_outdir/ "step_08_final_models"
 
 #############################################################################################################################################################################################################
 #############################################################################################################################################################################################################
@@ -102,8 +101,9 @@ ft_n_epoch_loc                    = 17                                          
 sys.path.append(dependency_paths['deep_learning_tools'])
 import deep_learning_tools
 from deep_learning_tools.file_handling import file_list_divider
-from deep_learning_tools.general import save_all_metrics, plot_all_metrics, training_figure_per_epoch
+from deep_learning_tools.plotting import plot_all_metrics
 from deep_learning_tools.data_handling import custom_range_for_CNN
+from deep_learning_tools.custom_callbacks import save_model_each_epoch, training_figure_per_epoch, save_all_metrics
 
 
 #%% Prepare the data that is used for training both steps.  
@@ -166,12 +166,12 @@ except:
 
 
 # 2: Callbacks
-metrics_fc = save_all_metrics(batch_metric_names)                                                            # first part is a list of the metrics, second is a dict that will store the metrics for each epoch.  
+fc_metrics = save_all_metrics(batch_metric_names)                                                            # first part is a list of the metrics, second is a dict that will store the metrics for each epoch.  
 epoch_saver = save_model_each_epoch(step_06_dir / f"vgg16_2head_fc")       # also initiate the callback to save the model every epoch
 tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=str(step_06_dir/ 'logs' / datetime.datetime.now().strftime("%Y%m%d-%H%M%S") )
                                                       , histogram_freq=1)
 
-fc_training_fig = training_figure_per_epoch(plot_all_metrics, metrics_fc.batch_metrics, metrics_fc.val_metrics, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
+fc_training_fig = training_figure_per_epoch(plot_all_metrics, fc_metrics.batch_metrics, fc_metrics.val_metrics, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
                                             'Fully connected network training', two_column = False, y_epoch_start = 0.8,
                                             out_path = step_06_dir )
 
@@ -179,12 +179,21 @@ fc_training_fig = training_figure_per_epoch(plot_all_metrics, metrics_fc.batch_m
 # # 3: train (fit)
 if fc_train_step_06:
     vgg16_2head_history = vgg16_2head.fit(train_generator, epochs = fc_n_epochs, validation_data = validation_generator,
-                                          shuffle = False, callbacks = [metrics_fc, epoch_saver, tensorboard_callback, fc_training_fig] )      # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
+                                          shuffle = False, callbacks = [fc_metrics, epoch_saver, tensorboard_callback, fc_training_fig] )      # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
                                           #max_queue_size = 4, workers = 4, use_multiprocessing = True)                                 # bit of a nightmare.     
+    with open(step_06_dir / 'training_history.pkl', 'wb') as f:                                                    # open the file
+        pickle.dump(fc_metrics.batch_metrics, f)
+        pickle.dump(fc_metrics.val_metrics, f)
+                                          
     plt.switch_backend('Qt5agg')
     
-    plot_all_metrics(metrics_fc.batch_metrics, metrics_fc.val_metrics, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
+    plot_all_metrics(fc_metrics.batch_metrics, fc_metrics.val_metrics, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
                       'Fully connected training', two_column = False, y_epoch_start = 0.)
+else:
+    with open(step_06_dir / 'training_history.pkl', 'rb') as f:                                                    # open the file
+        fc_metrics.batch_metrics = pickle.load(f)
+        fc_metrics.val_metrics = pickle.load(f)
+    plot_all_metrics(fc_metrics.batch_metrics, fc_metrics.val_metrics, batch_metric_names[:4],'Fully connected training (loaded)', two_column = False)
 
 
 
@@ -234,12 +243,24 @@ ft_training_fig = training_figure_per_epoch(plot_all_metrics, ft_metrics.batch_m
 if ft_train_step_07:
     vgg16_2head_history_step_07 = vgg16_2head_step_07.fit(train_generator, epochs = ft_n_epochs, validation_data = validation_generator,
                                                           shuffle = False, callbacks = [ft_metrics, ft_epoch_saver, ft_tensorboard_callback, ft_training_fig])                 # train
+    
+    with open(step_07_dir / 'training_history.pkl', 'wb') as f:                                                    # open the file
+        pickle.dump(ft_metrics.batch_metrics, f)
+        pickle.dump(ft_metrics.val_metrics, f)
+            
     plt.switch_backend('Qt5agg')
     plot_all_metrics(ft_metrics.batch_metrics, ft_metrics.val_metrics, batch_metric_names[:4],'Fine tune training', two_column = False)
+    
+else:
+    with open(step_07_dir / 'training_history.pkl', 'rb') as f:                                                    # open the file
+        ft_metrics.batch_metrics = pickle.load(f)
+        ft_metrics.val_metrics = pickle.load(f)
+    plot_all_metrics(ft_metrics.batch_metrics, ft_metrics.val_metrics, batch_metric_names[:4],'Fine tune training (loaded)', two_column = False)
+    
 
 
 vgg16_2head_step_07 = build_2head_from_epochs(vgg16_2head_step_07,  models_dir = step_07_dir,
-                                              n_epoch_class = ft_n_epoch_class, n_epoch_loc = ft_n_epoch_loc)
+                                              n_epoch_class = ft_n_epoch, n_epoch_loc = ft_n_epoch)                                                         # note that class and localisation epoch must be the same as the 5th block has been modified.  
 
 
 Y_class_test_cnn_7, Y_loc_test_cnn_7 = vgg16_2head_step_07.predict(X_test, verbose = 1)                                                                     # predict class labels
@@ -250,24 +271,48 @@ plot_data_class_loc_caller(X_test_m[:n_plot,], classes = Y_class_test[:n_plot,],
                            source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Test data (after step 07)')
 
 
+#%% Step 08: save final models and evaluate
 
-#%%
-# #%% Step 09: Test with just real data
+print('\n\nStep 08: Save the best model and forward pass of the real (VOLCNET) testing data through the network:')
+    
 
-
-# print('\n\nStep 08: Forward pass of the real (VOLCNET) testing data through the network:')
-
-
-# Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head_step_06.predict(X_test, verbose = 1)                                                    # predict class labels
-# vgg16_2head_step_06.evaluate(X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                                                                 # evaluate (ie. get metrics)
-
-# #n_plot = X_test.shape[0]                                                                                                                                              # plot all the data
-# n_plot = 30
-
-# plot_data_class_loc_caller(X_test_m[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],       # plot all/some of the testing data
-#                                            locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
-#                            source_names = synthetic_ifgs_settings['defo_sources'], window_title = ' Real (VOLCNET) testing data (after step 07)')
+Y_class_test_cnn, Y_loc_test_cnn = vgg16_2head_step_07.predict(X_test, verbose = 1)                                                    # predict class labels
 
 
-# #%% 
+#n_plot = X_test.shape[0]                                                                                                                                              # plot all the data
+#n_plot = 300
 
+plot_data_class_loc_caller(X_test_m[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],       # plot all/some of the testing data
+                                            locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
+                            source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Test data (after step 08)')
+
+if synth_only:
+    vgg16_2head_step_07.save(step_08_dir / "model_synthetic_data_only")                  # 
+    predictions_filename = 'synth_only_test_data_predictions.pkl'
+    evaluate_filename = 'synth_only_test_data_evaluations.pkl'
+else:
+    vgg16_2head_step_07.save(step_08_dir / "model_synthetic_and_real_data")                  # 
+    predictions_filename = 'synth_real_test_data_predictions.pkl'
+    evaluate_filename = 'synth_real_test_data_evaluations.pkl'
+
+with open(step_08_dir / predictions_filename, 'wb') as f:                                                    # open the file
+    pickle.dump(X_test, f)
+    pickle.dump(X_test_m, f)
+    pickle.dump(Y_class_test, f)
+    pickle.dump(Y_class_test_cnn, f)
+    pickle.dump(Y_loc_test, f)
+    pickle.dump(Y_loc_test_cnn, f)
+
+
+# also evaluate all the data, and by each label
+evaluate_results = {}
+evaluate_results['all'] = vgg16_2head_step_06.evaluate(X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                                                                 # evaluate (ie. get metrics)
+
+for source_n, source in enumerate(synthetic_ifgs_settings['defo_sources']):
+
+    print(f"Evaluating for source {source}:")
+    args = np.ravel(np.argwhere(Y_class_test[:,source_n] == 1))                                                                                             # get only the data with that label
+    evaluate_results[source] = vgg16_2head_step_06.evaluate(X_test[args,], y = [Y_class_test[args,], Y_loc_test[args,]], verbose = 1)                      # 
+    
+with open(step_08_dir / evaluate_filename, 'wb') as f:                                                    # 
+    pickle.dump(evaluate_results, f)    

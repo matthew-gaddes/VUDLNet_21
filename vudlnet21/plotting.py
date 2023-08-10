@@ -72,7 +72,7 @@ def open_datafile_and_plot(file_path, n_data = 15, rad_to_m_convert = False,
                            window_title = None):
     """ A function to open a .pkl file of ifgs and quickly plot the first n_data ifgs.  
     Inputs:
-        pkl_path | path | path to pkl file to be opened
+        file_path | path | path to pkl file to be opened
         n_data | int | the first n_data data in the pkl will be plotted.  
         rad_to_m_convert | boolean | If True, data are in sentinel-1 rads and are convereted to .  
         window_title        | None or string | Sets the title of the window, if not None
