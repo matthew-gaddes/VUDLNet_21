@@ -6,8 +6,11 @@ step_03_labelled_volcnet_data_testing/*.pkl
 step_04_augmented_labelled_volcnet_data/*.pkl
 step_05a_merged_rescaled_data_synth_only/*.npz
 step_05_merged_rescaled_data/*.npz
-step_06a_train_fully_connected_model_synth_only/*.h5
-step_06_train_fully_connected_model/*.h5
-step_07a_fine_tune_training_synth_only/*.h5
-step_07_fine_tune_training/*.h5
+step_06a_synth_vgg16/*.h5
+step_07a_synth_vgg16/*.h5
+step_06b_synth_real_vgg16/*.h5
+step_07b_synth_real_vgg16/*.h5
+step_06c_synth_real_efficientnet/*.h5
+step_07c_synth_real_efficientnet/*.h5
+
 step_08_final_models/*
