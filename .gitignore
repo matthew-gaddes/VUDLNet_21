@@ -8,14 +8,24 @@ step_05_merged_rescaled_data_range_-1_1/*.npz
 step_05_merged_rescaled_data_range_0_255/*.npz
 step_05a_merged_rescaled_data_synth_only_range_-1_1/*.npz
 step_06a_synth_vgg16/*.h5
+step_06a_synth_vgg16/logs/
 step_07a_synth_vgg16/*.h5
+step_07a_synth_vgg16/logs/
 step_06b_synth_real_vgg16/*.h5
+step_06b_synth_real_vgg16/logs/
 step_07b_synth_real_vgg16/*.h5
+step_07b_synth_real_vgg16/logs/
 step_06c_synth_real_efficientnet/*.h5
+step_06c_synth_real_efficientnet/logs/
 step_07c_synth_real_efficientnet/*.h5
+step_07c_synth_real_efficientnet/logs/
 step_06d_synth_real_inceptionv3/*.h5
+step_06d_synth_real_inceptionv3/logs/
 step_07d_synth_real_inceptionv3/*.h5
+step_07d_synth_real_inceptionv3/logs/
 step_06e_synth_real_resnet/*.h5
+step_06e_synth_real_resnet/logs/
 step_07e_synth_real_resnet/*.h5
+step_07e_synth_real_resnet/logs/
 
 step_08_final_models/*
