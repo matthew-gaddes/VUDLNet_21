@@ -26,7 +26,7 @@ import tensorflow.keras as keras
 from tensorflow.keras import Input, Model
 from tensorflow.keras import losses, optimizers
 from tensorflow.keras.utils import plot_model
-from tensorflow.keras.callbacks import ReduceLROnPlateau
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint
 
 from vudlnet21.neural_net import define_two_head_model, numpy_files_sequence, build_2head_from_epochs
 from vudlnet21.plotting import plot_data_class_loc_caller
@@ -73,7 +73,8 @@ n_plot           = 45
 
 # Option 2: synthetic and real data
 synth_only                        = False
-cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
+cnn_settings['n_files_train']     = 5                                              # the number of files that will be used to train the network
+#cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
 cnn_settings['n_files_validate']  = 5                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
 cnn_settings['n_files_test']      = 0                                               # the number of files held back for testing.      
 
@@ -103,7 +104,6 @@ step_06_dir                       = project_outdir / "step_06c_synth_real_effici
 fc_train_step_06                  = True
 fc_n_epochs                       = 200                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-#fc_loss_weights                   = [1, 0]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
 fc_optimizer                      = optimizers.Adam(learning_rate = 1e-6)           # 
 fc_n_epoch_class                  = 6                                               # best perfoamce of the classificaiton head at this epoch number.  Used in the model fine tuned in step 07
 fc_n_epoch_loc                    = 12                                              # best perfoamce of the localisation head at this epoch number.  Used in the model fine tuned in step 07
@@ -201,7 +201,7 @@ if model_type == "vgg16":
 elif model_type == 'efficientnet':
     from tensorflow.keras.applications.efficientnet import *
     encoder = EfficientNetB0(weights='imagenet', include_top=False, input_shape = (224,224,3))                                       # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define our own )
-    #model = EfficientNetB7(weights='imagenet', include_top=False, input_shape = (224,224,3))                                       # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define our own )
+    #encoder = EfficientNetB7(weights='imagenet', include_top=False, input_shape = (224,224,3))                                       # VGG16 is used for its convolutional layers and weights (but no fully connected part as we define our own )
 elif model_type == "inception":
     from tensorflow.keras.applications.inception_v3 import InceptionV3
     encoder = InceptionV3(weights='imagenet', include_top=False, input_shape = (224,224,3))
@@ -231,24 +231,30 @@ except:
 # 2: Callbacks
 fc_metrics = save_all_metrics(batch_metric_names)                                                            # first part is a list of the metrics, second is a dict that will store the metrics for each epoch.  
 #epoch_saver = save_model_each_epoch(step_06_dir / f"encoder_2head_fc")                                                       # also initiate the callback to save the model every epoch
-tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=str(step_06_dir/ 'logs' / datetime.datetime.now().strftime("%Y%m%d-%H%M%S") )
-                                                      , histogram_freq=1)
+epoch_save_class = ModelCheckpoint(step_06_dir / "best_class_model.h5" ,
+                                   monitor='val_class_dense3_accuracy', verbose = 1, 
+                                   save_best_only=True, save_weights_only=False)
+
+epoch_save_loss = ModelCheckpoint(step_06_dir / "best_loss_model.h5" ,
+                                   monitor='val_loc_dense6_loss', verbose = 1, 
+                                   save_best_only=True, save_weights_only=False)
+
+# tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=str(step_06_dir/ 'logs' / datetime.datetime.now().strftime("%Y%m%d-%H%M%S") )
+#                                                       , histogram_freq=1)
 
 fc_training_fig = training_figure_per_epoch(plot_all_metrics, fc_metrics.batch_metrics, fc_metrics.val_metrics, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
                                             'Fully connected network training', two_column = False, y_epoch_start = 0.8,                             # y_epoch_start original 0.8
                                             out_path = step_06_dir )
 
+reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=2, min_lr=1e-8, verbose = 1)
 
-reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=2, min_lr=1e-8)
+callbacks = [fc_metrics, epoch_save_class, epoch_save_loss, fc_training_fig, reduce_lr]
 
 # 3: train (fit)
 if fc_train_step_06:
-    # encoder_2head_history = encoder_2head.fit(train_generator, epochs = fc_n_epochs, validation_data = validation_generator,
-    #                                           shuffle = False, callbacks = [fc_metrics, epoch_saver, tensorboard_callback, fc_training_fig] )      # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
     encoder_2head_history = encoder_2head.fit(train_generator, epochs = fc_n_epochs, validation_data = validation_generator,
-                                             #  shuffle = False, callbacks = [fc_metrics, epoch_saver, tensorboard_callback, fc_training_fig, reduce_lr] )      # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
-                                               shuffle = False, callbacks = [fc_metrics, tensorboard_callback, fc_training_fig, reduce_lr] )      # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
-                                          #max_queue_size = 4, workers = 4, use_multiprocessing = True)                                 # bit of a nightmare.     
+                                               shuffle = False, callbacks = callbacks )                                                 # shuffle false required for fast opening of batches from numpy files (it ensures idx increases, rather than bein random)
+                                          
     with open(step_06_dir / 'training_history.pkl', 'wb') as f:                                                    # open the file
         pickle.dump(fc_metrics.batch_metrics, f)
         pickle.dump(fc_metrics.val_metrics, f)
@@ -269,6 +275,8 @@ encoder_2head_step_06 = build_2head_from_epochs(encoder_2head,  models_dir = ste
                                               n_epoch_class = fc_n_epoch_class, n_epoch_loc = fc_n_epoch_loc)
 
 #encoder_2head_step_06.evaluate(x = X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                  # check that model is being loaded correctly.  
+
+
 
 Y_class_test_cnn_6, Y_loc_test_cnn_6 = encoder_2head_step_06.predict(X_test, verbose = 1)                                                                     # predict class labels
 
