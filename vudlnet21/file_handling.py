@@ -114,6 +114,8 @@ def rescale_data(data_files, outdir, output_range = {'min':0, 'max':225}, tripli
     
     from deep_learning_tools.data_handling import custom_range_for_CNN
     
+    outdir.mkdir(parents = True, exist_ok = False )                                             # if outdir doesn't exist, make it.  If it does, raise error.  
+    
     n_files = len(data_files)        
     out_file = 0
     for n_file in range(n_files):
@@ -148,13 +150,15 @@ def rescale_data(data_files, outdir, output_range = {'min':0, 'max':225}, tripli
 #%%
 
 
-def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range = {'min':0, 'max':225},
+def merge_and_rescale_data(synthetic_data_files, real_data_files, outdir, output_range = {'min':0, 'max':225},
                            triplicate_channel = False):
-    """ Given a list of synthetic data files and real data files (usually the augmented real data),
+    """ Given a list of synthetic data files and real data files (usually the augmented real data) that are of equal size,
+    open pairs of these and merge together.  
     
     Inputs:
         synthetic_data_files | list of Paths or string | locations of the .pkl files containing the masked arrays
         reak_data_files      | list of Paths or string | locations of the .pkl files containing the masked arrays
+        outdir               | pathlib Path |            location to save npz files.
         output_range         | dict                    | min and maximum of each channel in each image.  Should be set to suit the CNN being used.  
         triplicate_channel   \ Boolean                  | Data are saved as rank 4 (n_data, ny, nx, n_chanels), and this option repeates the channel data 3 times. 
                                                           Useful if we have one channel data but want to use it with an RGB triple channel model.  
@@ -194,6 +198,8 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
     if len(synthetic_data_files) != len(real_data_files):
         raise Exception('This funtion is only designed to be used when the number of real and synthetic data files are the same.  Exiting.  ')
 
+    outdir.mkdir(parents = True, exist_ok = False )                                             # if outdir doesn't exist, make it.  If it does, raise error.  
+
     n_files = len(synthetic_data_files)        
     out_file = 0
     for n_file in range(n_files):
@@ -226,9 +232,9 @@ def merge_and_rescale_data(synthetic_data_files, real_data_files, output_range =
             X_rescale = np.repeat(X_rescale, repeats = 3, axis = -1)                                 # repeat the channels (last dimension) three times.  
                 
         data_mid = int(X_rescale.shape[0] / 2)                                                                                                                          # data before this number in one file, and after in another
-        np.savez(f'step_05_merged_rescaled_data/data_file_{out_file:05d}.npz', X = X_rescale[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])           # save the first half of the data
+        np.savez(outdir / f'data_file_{out_file:05d}.npz', X = X_rescale[:data_mid,:,:,:], Y_class= Y_class[:data_mid,:], Y_loc = Y_loc[:data_mid,:])           # save the first half of the data
         out_file += 1                                                                                                                                                   # after saving once, update
-        np.savez(f'step_05_merged_rescaled_data/data_file_{out_file:05d}.npz', X = X_rescale[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])           # save the second half of the data
+        np.savez(outdir / f'data_file_{out_file:05d}.npz', X = X_rescale[data_mid:,:,:,:], Y_class= Y_class[data_mid:,:], Y_loc = Y_loc[data_mid:,:])           # save the second half of the data
         out_file += 1                                                                                                                                                   # and after saving again, update again.  
         print('Done.  ')
         

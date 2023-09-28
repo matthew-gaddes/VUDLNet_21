@@ -145,8 +145,13 @@ def define_two_head_model(model_input, n_class_outputs = 3):
     vgg16_block_1to5_flat = Flatten(name = 'vgg16_block_1to5_flat')(model_input)                              # flatten the model input (ie deep representation turned into a column vector)
 
     # 1: the clasification head
-    x = Dropout(0.2, name='class_dropout1')(vgg16_block_1to5_flat)
-    x = Dense(256, activation='relu', name='class_dense1')(x)                                                 # add a fully connected layer
+    # Start option:  old style, dropout first.  
+    # x = Dropout(0.2, name='class_dropout1')(vgg16_block_1to5_flat)                                            # remo
+    # x = Dense(256, activation='relu', name='class_dense1')(x)                                                 # add a fully connected layer
+    # new style, no dropout
+    x = Dense(256, activation='relu', name='class_dense1')(vgg16_block_1to5_flat)                                                 # add a fully connected layer
+    # end option
+
     x = Dropout(0.2, name='class_dropout2')(x)
     x = Dense(128, activation='relu', name='class_dense2')(x)                                                 # add a fully connected layer
     output_class = Dense(n_class_outputs, activation='softmax',  name = 'class_dense3')(x)                  # and an ouput layer with 7 outputs (ie one per label)

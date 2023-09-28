@@ -4,8 +4,9 @@ step_02_synthetic_data/*.pkl
 step_03_labelled_volcnet_data/*.pkl
 step_03_labelled_volcnet_data_testing/*.pkl
 step_04_augmented_labelled_volcnet_data/*.pkl
-step_05a_merged_rescaled_data_synth_only/*.npz
-step_05_merged_rescaled_data/*.npz
+step_05_merged_rescaled_data_range_-1_1/*.npz
+step_05_merged_rescaled_data_range_0_255/*.npz
+step_05a_merged_rescaled_data_synth_only_range_-1_1/*.npz
 step_06a_synth_vgg16/*.h5
 step_07a_synth_vgg16/*.h5
 step_06b_synth_real_vgg16/*.h5

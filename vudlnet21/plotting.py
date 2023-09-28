@@ -194,7 +194,7 @@ def plot_data_class_loc(data, plot_args, classes=None,           locs=None,
     n_plots = int(len(plot_args))
     f1, axes = plt.subplots(n_rows, n_cols, figsize = figsize)
     if window_title is not None:
-        f1.canvas.set_window_title(window_title)
+        f1.canvas.manager.set_window_title(window_title)
         
     
     
