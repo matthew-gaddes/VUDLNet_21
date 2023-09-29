@@ -11,7 +11,7 @@ import tensorflow as tf
 #%%
 
 
-def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, source_names = None, X_test = None, Y_class_test = None, Y_loc_test = None, n_plot = 15):
+def build_2head_from_epochs(model, models_dir,  n_models = 2):
     """
     The performance of each head of a two headed model may be best at different epochs for different heads.  
     Merge the two heads to create the optimal model.  
@@ -33,14 +33,21 @@ def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, sourc
         
     History:
         2022_11_01 | MEG | Written
+        2023_09_28 | MEG | Update to take models named by ModelCheckpoint, and discard figure options.  
     
     """
     import tensorflow.keras as keras
-    from vudlnet21.plotting import plot_data_class_loc_caller
+    
     
     print(f"Loading the two models at the required epochs...", end = '')
-    class_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_class:03d}.h5")          # load the best classification model
-    loc_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_loc:03d}.h5")              # load the best localisation model
+    # class_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_class:03d}.h5")          # load the best classification model
+    # loc_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_loc:03d}.h5")              # load the best localisation model
+    if n_models == 2:
+        class_model = keras.models.load_model(models_dir / "best_class_model.h5")          # load the best classification model
+        loc_model = keras.models.load_model(models_dir / "best_loss_model.h5")              # load the best localisation model
+    else:
+        class_model = keras.models.load_model(models_dir / "best_model.h5")          # load the best classification model
+        loc_model = keras.models.load_model(models_dir / "best_model.h5")              # load the best localisation model
     print(f" Done.  ")
     
     #model = keras.models.clone_model(model)                                                                    # if you don't want to change the original model.  Would need to update remaining references to it though.  
@@ -51,19 +58,6 @@ def build_2head_from_epochs(model, models_dir, n_epoch_class, n_epoch_loc, sourc
         if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
             model.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
             
-    if X_test != None:
-        print(f"Starting the forward pass of the testing data:")
-        Y_class_test_cnn, Y_loc_test_cnn = model.predict(X_test, verbose = 1, batch_size = 15)                                                               # predict to make new Ys
-        
-        print(f"Staring to plot the testing data...", end = '')
-        plot_data_class_loc_caller(X_test[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn[:n_plot,],                    # plot some of the testing data.  
-                                                   locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn[:n_plot,], 
-                                   source_names = source_names, 
-                                   window_title = f"Test data - class_epoch:{n_epoch_class} loc_epoch:{n_epoch_loc}")
-        print(f" Done.  ")
-    else:
-        print(f"No test data provided.  ")
-    
     return model
             
     
