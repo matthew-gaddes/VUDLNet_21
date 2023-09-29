@@ -23,6 +23,7 @@ from copy import deepcopy
 import tensorflow as tf
 import tensorflow.keras as keras
 
+from tensorflow.keras import layers
 from tensorflow.keras import Input, Model
 from tensorflow.keras import losses, optimizers
 from tensorflow.keras.utils import plot_model
@@ -33,6 +34,16 @@ from vudlnet21.plotting import plot_data_class_loc_caller
 from vudlnet21.file_handling import file_merger
 
 
+def print_model_param_info(model):
+    """ """
+    import tensorflow.keras.backend as K
+    trainable_count = np.sum([K.count_params(w) for w in model.trainable_weights])
+    non_trainable_count = np.sum([K.count_params(w) for w in model.non_trainable_weights])
+    
+    print('Total params: {:,}'.format(trainable_count + non_trainable_count))
+    print('Trainable params: {:,}'.format(trainable_count))
+    print('Non-trainable params: {:,}'.format(non_trainable_count))
+    
 
 
 #%% Things to set
@@ -76,8 +87,8 @@ cnn_settings = {}
 
 # Option 2: synthetic and real data
 synth_only                        = False
-#cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
-cnn_settings['n_files_train']     = 5                                              # the number of files that will be used to train the network
+cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
+#cnn_settings['n_files_train']     = 5                                              # the number of files that will be used to train the network
 cnn_settings['n_files_validate']  = 5                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
 cnn_settings['n_files_test']      = 0                                               # the number of files held back for testing.      
 
@@ -119,7 +130,7 @@ ft_batch_size                     = 25                                          
 ft_loss_weights                   = [1000, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
 ft_unfreeze_from                  = 232                                            # layer 232 is block_7a_project_now, layer 234 is top_conv, 237 is end of EfficientNet and start of two head classifier
 #ft_optimiser                      = keras.optimizers.Adam(1.e-25)                    # Not tested yet  
-ft_optimizer                      = optimizers.SGD(learning_rate = 1e-12)            # SGD
+ft_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD, 1e-5 too large, 
 
 
 # Option 2D: InceptionV3, synthetic and real data
@@ -292,6 +303,26 @@ if step_06_or_07 == 'step_06':
     plot_data_class_loc_caller(X_test_m[:n_plot,], classes = Y_class_test[:n_plot,], classes_predicted = Y_class_test_cnn_6[:n_plot,],                            # plot all the testing data
                                                   locs = Y_loc_test[:n_plot,],      locs_predicted = Y_loc_test_cnn_6[:n_plot,], 
                                source_names = synthetic_ifgs_settings['defo_sources'], window_title = 'Test data (after step 06)')
+        
+
+    # save some useful outputs.          
+    with open(step_06_dir / 'test_data_predictions.pkl', 'wb') as f:                                                    # open the file
+        pickle.dump(X_test, f)
+        pickle.dump(X_test_m, f)
+        pickle.dump(Y_class_test, f)
+        pickle.dump(Y_class_test_cnn, f)
+        pickle.dump(Y_loc_test, f)
+        pickle.dump(Y_loc_test_cnn, f)
+    
+    # also evaluate all the data, and by each label
+    evaluate_results = {}
+    evaluate_results['all'] = encoder_2head_step_06.evaluate(X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                                                                 # evaluate (ie. get metrics)
+    for source_n, source in enumerate(synthetic_ifgs_settings['defo_sources']):
+        print(f"Evaluating for source {source}:")
+        args = np.ravel(np.argwhere(Y_class_test[:,source_n] == 1))                                                                                             # get only the data with that label
+        evaluate_results[source] = encoder_2head_step_06.evaluate(X_test[args,], y = [Y_class_test[args,], Y_loc_test[args,]], verbose = 1)                      # 
+    with open(step_06_dir / 'test_data_evaluations.pkl', 'wb') as f:                                                    # 
+        pickle.dump(evaluate_results, f)    
     
 
 
@@ -308,15 +339,21 @@ if step_06_or_07 == 'step_07':
 
 
     for layer_n, layer in enumerate(encoder_2head_step_07.layers):
-        if layer_n < ft_unfreeze_from:
-            layer.trainable = False                                             # unfreeze some of the encoder.  
+        if not isinstance(layer, layers.BatchNormalization):                        # if not batch normalistaion layetr
+            if layer_n < ft_unfreeze_from:
+                layer.trainable = False                                             # keep early parts frozen
+            else:
+                layer.trainable = True                                              # unfreeze some of the encoder
         else:
-            layer.trainable = True    
+            layer.trainable = False                                             # but if batchnormalisation, keep frozen
+            
     
     print(f"Step 07 trainable layers:")
     for layer in encoder_2head_step_07.layers:
         if layer.trainable:
             print(f"    {layer.name} (output shape: {layer.output_shape}")
+    
+    print_model_param_info(encoder_2head_step_07)
     
     encoder_2head_step_07.compile(optimizer = ft_optimizer, metrics=['accuracy'],                         # recompile as we've changed which layers can be trained/ optimizer etc.  
                                 loss=[loss_class, loss_loc], loss_weights = ft_loss_weights)                                  
@@ -364,38 +401,36 @@ if step_06_or_07 == 'step_07':
     
     
 
-
-sys.exit()
-
-#%% Step 08: save final models and evaluate
-
-if synth_only:
-    encoder_2head_step_07.save(step_08_dir / "model_synthetic_data_only")                  # 
-    predictions_filename = 'synth_only_test_data_predictions.pkl'
-    evaluate_filename = 'synth_only_test_data_evaluations.pkl'
-else:
-    encoder_2head_step_07.save(step_08_dir / "model_synthetic_and_real_data")                  # 
-    predictions_filename = 'synth_real_test_data_predictions.pkl'
-    evaluate_filename = 'synth_real_test_data_evaluations.pkl'
-
-with open(step_08_dir / predictions_filename, 'wb') as f:                                                    # open the file
-    pickle.dump(X_test, f)
-    pickle.dump(X_test_m, f)
-    pickle.dump(Y_class_test, f)
-    pickle.dump(Y_class_test_cnn, f)
-    pickle.dump(Y_loc_test, f)
-    pickle.dump(Y_loc_test_cnn, f)
-
-
-# also evaluate all the data, and by each label
-evaluate_results = {}
-evaluate_results['all'] = encoder_2head_step_06.evaluate(X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                                                                 # evaluate (ie. get metrics)
-
-for source_n, source in enumerate(synthetic_ifgs_settings['defo_sources']):
-
-    print(f"Evaluating for source {source}:")
-    args = np.ravel(np.argwhere(Y_class_test[:,source_n] == 1))                                                                                             # get only the data with that label
-    evaluate_results[source] = encoder_2head_step_06.evaluate(X_test[args,], y = [Y_class_test[args,], Y_loc_test[args,]], verbose = 1)                      # 
+    # save some useful outputs        
+    with open(step_07_dir / 'test_data_predictions.pkl', 'wb') as f:                                                    # open the file
+        pickle.dump(X_test, f)
+        pickle.dump(X_test_m, f)
+        pickle.dump(Y_class_test, f)
+        pickle.dump(Y_class_test_cnn, f)
+        pickle.dump(Y_loc_test, f)
+        pickle.dump(Y_loc_test_cnn, f)
     
-with open(step_08_dir / evaluate_filename, 'wb') as f:                                                    # 
-    pickle.dump(evaluate_results, f)    
+    # also evaluate all the data, and by each label
+    evaluate_results = {}
+    evaluate_results['all'] = encoder_2head_step_07.evaluate(X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                                                                 # evaluate (ie. get metrics)
+    for source_n, source in enumerate(synthetic_ifgs_settings['defo_sources']):
+        print(f"Evaluating for source {source}:")
+        args = np.ravel(np.argwhere(Y_class_test[:,source_n] == 1))                                                                                             # get only the data with that label
+        evaluate_results[source] = encoder_2head_step_06.evaluate(X_test[args,], y = [Y_class_test[args,], Y_loc_test[args,]], verbose = 1)                      # 
+    with open(step_07_dir / 'test_data_evaluations.pkl', 'wb') as f:                                                    # 
+        pickle.dump(evaluate_results, f)    
+    
+    
+#%%
+
+
+
+
+
+
+
+
+
+
+
+
