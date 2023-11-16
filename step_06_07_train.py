@@ -34,6 +34,7 @@ from vudlnet21.plotting import plot_data_class_loc_caller
 from vudlnet21.file_handling import file_merger
 
 
+
 def print_model_param_info(model):
     """ """
     import tensorflow.keras.backend as K
@@ -47,90 +48,94 @@ def print_model_param_info(model):
 
 
 #%% Things to set
-dependency_paths = {#'deep_learning_tools'   : '/home/matthew/university_work/crucial_1000gb/20_deep_learning_tools'}                                      # Available from Github: https://github.com/matthew-gaddes/Deep-Learning-Tools
-                    'deep_learning_tools'     : '/home/matthew/university_work/crucial_1000gb/15_my_software_releases/Deep-Learning-Tools-1.2.0'}
+print(f"\n\n Using the development version of deep learning tools ")
+dependency_paths = {'deep_learning_tools'   : '/home/matthew/university_work/crucial_1000gb/20_deep_learning_tools'}                                      # Available from Github: https://github.com/matthew-gaddes/Deep-Learning-Tools
+                    #'deep_learning_tools'     : '/home/matthew/university_work/crucial_1000gb/15_my_software_releases/Deep-Learning-Tools-1.2.0'}
 
 # settings that need to be the same as part 1
-project_outdir          = Path('./')
-synthetic_ifgs_settings = {'defo_sources' : ['dyke', 'sill', 'no_def']}                                                             # deformation patterns that will be included in the dataset.  
-batch_metric_names      = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']          # all the metrics used in our model
-step_06_or_07           =  'step_07'
+project_outdir                  = Path('./')
+synthetic_ifgs_settings         = {'defo_sources' : ['dyke', 'sill', 'no_def']}                                                             # deformation patterns that will be included in the dataset.  
+batch_metric_names              = ['loss', 'class_dense3_loss', 'loc_dense6_loss', 'class_dense3_accuracy', 'loc_dense6_accuracy']          # all the metrics used in our model
 
-# shared training settings:
-fc_batch_size       = 100                                                                # works on Nvidia GTX 1070 
-n_plot           = 45
-cnn_settings = {}
+# Settings shared with all options.  
+step_06_or_07                   = 'step_07'
+fc_train_step_06                = False
+ft_train_step_07                = True
+n_plot                          = 45
+cnn_settings                    = {}
+
 
 # # Option 1A: VGG16, synthetic data only.  
-# synth_only                        = True
-# model_type                        = "vgg16"                                         # convolution model
-# cnn_settings['input_range']       =  {'min':-1, 'max':1}                           # note that Efficientnet is unusual as not - 1 to 1 
-# data_dir                          = project_outdir / "step_05a_merged_rescaled_data_synth_only_range_-1_1" 
-# cnn_settings['n_files_train']     = 35                                              # the number of files that will be used to train the network
-# cnn_settings['n_files_validate']  = 3                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
-# cnn_settings['n_files_test']      = 1                                               # the number of files held back for testing.  
-# model_type                        = "vgg16"                                         # convolution model              
-# step_06_dir                       = project_outdir / "step_06a_synth_vgg16"
-# fc_train_step_06                  = False
-# fc_n_epochs                       = 100                                             # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
-# fc_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
-# fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  4
-# fc_optimizer                      = optimizers.Nadam(learning_rate = 0.001, 
-#                                                      clipnorm = 1., clipvalue = 0.5)                    # adam with Nesterov accelerated gradient
-# step_07_dir                       = project_outdir / "step_07a_synth_vgg16"
-# ft_train_step_07                  = False
-# ft_n_epochs                       = 50                                              # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
-# ft_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
-# ft_loss_weights                   = [10, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  4
-# ft_unfreeze_from                  = 15                                            # layers after this are trained, before are not.  
-# ft_optimizer = keras.optimizers.Adam(1.e-5)                                     # seems to work?  
+synth_only                        = True
+model_type                        = "vgg16"                                         # convolution model
+cnn_settings['input_range']       =  {'min':-1, 'max':1}                           # note that Efficientnet is unusual as not - 1 to 1 
+data_dir                          = project_outdir / "step_05a_merged_rescaled_data_synth_only_range_-1_1" 
+#cnn_settings['n_files_train']     = 35                                              # the number of files that will be used to train the network
+cnn_settings['n_files_train']     = 5                                              # the number of files that will be used to train the network
+cnn_settings['n_files_validate']  = 3                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
+cnn_settings['n_files_test']      = 1                                               # the number of files held back for testing.  
+step_06_dir                       = project_outdir / "step_06a_synth_vgg16"
+#fc_n_epochs                       = 100                                             # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+fc_n_epochs                       = 5                                             # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+fc_batch_size                     = 100                                             # works on Nvidia GTX 1070 
+fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  4
+fc_optimizer                      = optimizers.Nadam(learning_rate = 1e-4) 
+step_07_dir                       = project_outdir / "step_07a_synth_vgg16"
+# ft_n_epochs                       = 200                                              # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
+ft_n_epochs                       = 5                                              # the number of epochs to fine-tune for (ie. the number of times all the training data are passed through the model)
+ft_batch_size                     = 100                                             # works on Nvidia GTX 1070 
+ft_loss_weights                   = [10, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  4
+ft_unfreeze_from                  = 15                                              # layers after this are trained, before are not.  
+ft_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD, 
 
-# Option 2: synthetic and real data
-synth_only                        = False
-cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
-#cnn_settings['n_files_train']     = 5                                              # the number of files that will be used to train the network
-cnn_settings['n_files_validate']  = 5                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
-cnn_settings['n_files_test']      = 0                                               # the number of files held back for testing.      
+# # Option 2: synthetic and real data
+# synth_only                        = False
+# cnn_settings['n_files_train']     = 75                                              # the number of files that will be used to train the network
+# cnn_settings['n_files_validate']  = 5                                               # the number of files that wil be used to validate the network (i.e. passed through once per epoch)
+# cnn_settings['n_files_test']      = 0                                               # the number of files held back for testing.      
 
 # # Option 2B: VGG16, synthetic and real data
 # model_type                        = "vgg16"                                         # convolution model
 # cnn_settings['input_range']       =  {'min':-1, 'max':1}                           # note that Efficientnet is unusual as not - 1 to 1 
 # data_dir                          = project_outdir / "step_05_merged_rescaled_data_range_-1_1" 
 # step_06_dir                       = project_outdir / "step_06b_synth_real_vgg16"
-# fc_train_step_06                  = False
-# fc_n_epochs                       = 25                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+# fc_n_epochs                       = 100                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 # fc_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
 # fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-# fc_optimizer                      = optimizers.Nadam(learning_rate = 0.001, 
-#                                                       clipnorm = 1., clipvalue = 0.5)                    # adam with Nesterov accelerated gradient
+# # fc_optimizer                      = optimizers.Nadam(learning_rate = 0.001, 
+# #                                                       clipnorm = 1., clipvalue = 0.5)                    # adam with Nesterov accelerated gradient
 # fc_optimizer                      = optimizers.Adam(learning_rate = 0.001)        # 
 # step_07_dir                       = project_outdir / "step_07b_synth_real_vgg16"
-# ft_train_step_07                  = False                                           # 
-# ft_n_epochs                       = 25                                              # the number of epochs to fine-tune for 
+# ft_n_epochs                       = 100                                              # the number of epochs to fine-tune for 
 # ft_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
 # ft_loss_weights                   = [10, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
 # ft_unfreeze_from                  = 15                                            # layers after this are trained, before are not.  
-# ft_optimizer                      = keras.optimizers.Adam(1.e-5)                                         # seems to work?  
+# ft_optimizer                      = optimizers.SGD(learning_rate = 1e-7)            # SGD, 1e-5 too large, previously set to 1e-6.  [1e-10 preserves model but doesn't learn significnatly] [ 1e-9 and 1e-8 seesm to lead to gradual degradation of performace]
+
+# """"
+# ft_loss_weights = [1000, 1] doesn't work even with SBG at 1e-10
+# trying 100, 1, didn't make much difference'
+# trying [10, 1], at 1e-9 doesn't learn (but only tried ~4 epochs)
+# """
+
 
 # Option 2C: EfficientNet, synthetic and real data
-model_type                        = "efficientnet"                                  # convolution model
-cnn_settings['input_range']       =  {'min':0, 'max':255}                           # note that Efficientnet is unusual as not - 1 to 1 
-data_dir                          = project_outdir / "step_05_merged_rescaled_data_range_0_255" 
-step_06_dir                       = project_outdir / "step_06c_synth_real_efficientnet"
-fc_train_step_06                  = False
-fc_n_epochs                       = 150                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
-fc_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
-fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-fc_optimizer                      = optimizers.Adam(learning_rate = 1e-6)           # 
+# model_type                        = "efficientnet"                                  # convolution model
+# cnn_settings['input_range']       =  {'min':0, 'max':255}                           # note that Efficientnet is unusual as not - 1 to 1 
+# data_dir                          = project_outdir / "step_05_merged_rescaled_data_range_0_255" 
+# step_06_dir                       = project_outdir / "step_06c_synth_real_efficientnet"
+# fc_n_epochs                       = 150                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+# fc_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
+# fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+# fc_optimizer                      = optimizers.Adam(learning_rate = 1e-6)           # 
 
-step_07_dir                       = project_outdir / "step_07c_synth_real_efficientnet"
-ft_train_step_07                  = True                                           # 
-ft_n_epochs                       = 5                                              # the number of epochs to fine-tune for 
-ft_batch_size                     = 25                                                                # works on Nvidia GTX 1070 
-ft_loss_weights                   = [1000, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-ft_unfreeze_from                  = 232                                            # layer 232 is block_7a_project_now, layer 234 is top_conv, 237 is end of EfficientNet and start of two head classifier
-#ft_optimiser                      = keras.optimizers.Adam(1.e-25)                    # Not tested yet  
-ft_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD, 1e-5 too large, 
+# step_07_dir                       = project_outdir / "step_07c_synth_real_efficientnet"
+# ft_n_epochs                       = 5                                              # the number of epochs to fine-tune for 
+# ft_batch_size                     = 25                                                                # works on Nvidia GTX 1070 
+# ft_loss_weights                   = [1000, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+# ft_unfreeze_from                  = 232                                            # layer 232 is block_7a_project_now, layer 234 is top_conv, 237 is end of EfficientNet and start of two head classifier
+# #ft_optimiser                      = keras.optimizers.Adam(1.e-25)                    # Not tested yet  
+# ft_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD, 1e-5 too large, 
 
 
 # Option 2D: InceptionV3, synthetic and real data
@@ -138,16 +143,16 @@ ft_optimizer                      = optimizers.SGD(learning_rate = 1e-6)        
 # cnn_settings['input_range']       =  {'min':-1, 'max':1}                           # note that Efficientnet is unusual as not - 1 to 1 
 # data_dir                          = project_outdir / "step_05_merged_rescaled_data_range_-1_1" 
 # step_06_dir                       = project_outdir / "step_06d_synth_real_inceptionv3"
-# fc_train_step_06                  = True
-# fc_n_epochs                       = 25                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+# fc_n_epochs                       = 200                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 # fc_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
 # fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
-# fc_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD
+# #fc_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD
+# fc_optimizer                      = keras.optimizers.Adam(1.e-6)                                     # 
 # step_07_dir                       = project_outdir / "step_07d_synth_real_inceptionv3"
-# ft_train_step_07                  = False                                           # 
-# ft_n_epochs                       = 25                                              # the number of epochs to fine-tune for 
+# ft_n_epochs                       = 200                                              # the number of epochs to fine-tune for 
 # ft_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
-# ft_loss_weights                   = [10, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+# ft_loss_weights                   = [1000, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
+# # ft_unfreeze_from                  = 232                                            # layer 232 is block_7a_project_now, layer 234 is top_conv, 237 is end of EfficientNet and start of two head classifier
 # ft_optimizer                      = keras.optimizers.Adam(1.e-5)                                     # seems to work?  
 
 # Option 2E: ResNet152V2, synthetic and real data
@@ -155,13 +160,11 @@ ft_optimizer                      = optimizers.SGD(learning_rate = 1e-6)        
 # cnn_settings['input_range']       =  {'min':-1, 'max':1}                           # note that Efficientnet is unusual as not - 1 to 1 
 # data_dir                          = project_outdir / "step_05_merged_rescaled_data_range_-1_1" 
 # step_06_dir                       = project_outdir / "step_06e_synth_real_resnet"
-# fc_train_step_06                  = True
-# fc_n_epochs                       = 25                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
+# fc_n_epochs                       = 100                                              # the number of epochs to train the fully connected network for (ie. the number of times all the training data are passed through the model)
 # fc_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
 # fc_loss_weights                   = [1000, 1]                                       # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
 # fc_optimizer                      = optimizers.SGD(learning_rate = 1e-6)            # SGD
 # step_07_dir                       = project_outdir / "step_07e_synth_real_resnet"
-# ft_train_step_07                  = False                                           # 
 # ft_n_epochs                       = 25                                              # the number of epochs to fine-tune for 
 # ft_batch_size                     = 100                                                                # works on Nvidia GTX 1070 
 # ft_loss_weights                   = [10, 1]                                         # the relative weighting of the two losses (classificaiton and localisation) to contribute to the global loss.  Classification first, localisation second.  
@@ -182,7 +185,7 @@ import deep_learning_tools
 from deep_learning_tools.file_handling import file_list_divider
 from deep_learning_tools.plotting import plot_all_metrics
 from deep_learning_tools.data_handling import custom_range_for_CNN
-from deep_learning_tools.custom_callbacks import save_model_each_epoch, training_figure_per_epoch, save_all_metrics
+from deep_learning_tools.custom_callbacks import save_model_each_epoch, training_figure_per_epoch, save_all_metrics, duplicate_model_remover
 
 
 #%% Prepare the data that is used for training both steps.  
@@ -241,7 +244,10 @@ encoder_2head = Model(inputs=encoder.input, outputs=[output_class, output_loc]) 
 loss_class = losses.categorical_crossentropy                                                                                     # good loss to use for classification problems, may need to switch to binary if only two classes though?
 loss_loc = losses.mean_squared_error                                                                                             # loss for localisation
 
+
 #%% step 06: Train the fully connected part of the CNN
+
+
 
 if step_06_or_07 == 'step_06':
     print('\nStep 06: Training the fully connected part of the CNN.')
@@ -259,11 +265,12 @@ if step_06_or_07 == 'step_06':
     
     # 2: Callbacks
     fc_metrics = save_all_metrics(batch_metric_names)                                                            # first part is a list of the metrics, second is a dict that will store the metrics for each epoch.  
-    epoch_save_class = ModelCheckpoint(step_06_dir / "best_class_model.h5" ,
+    step_06_model_save_names = ['best_class', 'best_loc']                                                               # names of files with the best models in saved each epoch (if metric is improving)
+    epoch_save_class = ModelCheckpoint(step_06_dir / (f"{step_06_model_save_names[0]}" + "_epoch_{epoch:03d}.h5") ,
                                        monitor='val_class_dense3_accuracy', verbose = 1, 
                                        save_best_only=True, save_weights_only=False)
     
-    epoch_save_loss = ModelCheckpoint(step_06_dir / "best_loss_model.h5" ,
+    epoch_save_loss = ModelCheckpoint(step_06_dir / (f"{step_06_model_save_names[1]}" + "_epoch_{epoch:03d}.h5" ) ,
                                        monitor='val_loc_dense6_loss', verbose = 1, 
                                        save_best_only=True, save_weights_only=False)
     
@@ -272,8 +279,9 @@ if step_06_or_07 == 'step_06':
                                                 out_path = step_06_dir )
     
     reduce_lr = ReduceLROnPlateau(monitor='loss', factor=0.1, patience=2, min_lr=1e-8, verbose = 1)
-    
-    callbacks = [fc_metrics, epoch_save_class, epoch_save_loss, fc_training_fig, reduce_lr]
+    step_06_duplicate_remover = duplicate_model_remover(step_06_dir, step_06_model_save_names)
+
+    callbacks = [fc_metrics, epoch_save_class, epoch_save_loss, fc_training_fig, reduce_lr, step_06_duplicate_remover]
     
     # 3: train (fit)
     if fc_train_step_06:
@@ -310,9 +318,9 @@ if step_06_or_07 == 'step_06':
         pickle.dump(X_test, f)
         pickle.dump(X_test_m, f)
         pickle.dump(Y_class_test, f)
-        pickle.dump(Y_class_test_cnn, f)
+        pickle.dump(Y_class_test_cnn_6, f)
         pickle.dump(Y_loc_test, f)
-        pickle.dump(Y_loc_test_cnn, f)
+        pickle.dump(Y_loc_test_cnn_6, f)
     
     # also evaluate all the data, and by each label
     evaluate_results = {}
@@ -361,17 +369,18 @@ if step_06_or_07 == 'step_07':
     # print(f"Checking that the step 07 model retains the performance of step 06 before further training:")
     # encoder_2head_step_07.evaluate(x = X_test, y = [Y_class_test, Y_loc_test], verbose = 1)                       # check that model is being loaded correctly (i.e. that metrics are OK)
         
-    # Define the 4 callbacks
+    # Define the 5 callbacks
     ft_metrics = save_all_metrics(batch_metric_names)                                                            # initiaite the callback to record metrics every batch
-    epoch_save_both = ModelCheckpoint(step_07_dir / "best_model.h5" ,
+    step_07_model_save_names = ['best_model']                                                               # names of files with the best models in saved each epoch (if metric is improving)
+    epoch_save_both = ModelCheckpoint(step_07_dir / (f"{step_07_model_save_names[0]}" + "_epoch_{epoch:03d}.h5") ,
                                        monitor='val_loss', verbose = 1, 
                                        save_best_only=True, save_weights_only=False)
     
     ft_training_fig = training_figure_per_epoch(plot_all_metrics, ft_metrics.batch_metrics, ft_metrics.val_metrics, batch_metric_names[:4],                                             # plot metrics for all batches and epochs.  Note, miss last metric as it's localisation accuracy which is meaningless.  
                                                        'Fine-tune training', two_column = False, y_epoch_start = 0.0,
                                                        out_path = step_07_dir)
-    
-    callbacks = [ft_metrics, epoch_save_both, ft_training_fig]
+    step_07_duplicate_remover = duplicate_model_remover(step_07_dir, step_07_model_save_names)
+    callbacks = [ft_metrics, epoch_save_both, ft_training_fig, step_07_duplicate_remover]
     
     
     # Either do the training or load history from previous run.  
@@ -406,9 +415,9 @@ if step_06_or_07 == 'step_07':
         pickle.dump(X_test, f)
         pickle.dump(X_test_m, f)
         pickle.dump(Y_class_test, f)
-        pickle.dump(Y_class_test_cnn, f)
+        pickle.dump(Y_class_test_cnn_7, f)
         pickle.dump(Y_loc_test, f)
-        pickle.dump(Y_loc_test_cnn, f)
+        pickle.dump(Y_loc_test_cnn_7, f)
     
     # also evaluate all the data, and by each label
     evaluate_results = {}
@@ -416,7 +425,7 @@ if step_06_or_07 == 'step_07':
     for source_n, source in enumerate(synthetic_ifgs_settings['defo_sources']):
         print(f"Evaluating for source {source}:")
         args = np.ravel(np.argwhere(Y_class_test[:,source_n] == 1))                                                                                             # get only the data with that label
-        evaluate_results[source] = encoder_2head_step_06.evaluate(X_test[args,], y = [Y_class_test[args,], Y_loc_test[args,]], verbose = 1)                      # 
+        evaluate_results[source] = encoder_2head_step_07.evaluate(X_test[args,], y = [Y_class_test[args,], Y_loc_test[args,]], verbose = 1)                      # 
     with open(step_07_dir / 'test_data_evaluations.pkl', 'wb') as f:                                                    # 
         pickle.dump(evaluate_results, f)    
     

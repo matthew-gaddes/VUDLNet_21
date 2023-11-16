@@ -19,35 +19,46 @@ def build_2head_from_epochs(model, models_dir,  n_models = 2):
     Inputs:
         model | keras model | model to be updated.  
         models_dir | pathlib Path | directory to where the model was stored after each epoch
-        n_epoch_class | int | epoch number of the classification head to use
-        n_epoch_loc | int | epoch number of the localisation head to use
-        X_test | numpy rank 4 | test data
-        Y_class_test | numpy rank 2 | classification labels.  
-        Y_loc_test | numpy rank 2 | localisation labels
-        sources_names | list of strings | sources names as used by the classification head
-        n_plot | int | number of testing data to plot.  
-        
     Returns:
         model | keras model | updated model
-        figure
+        
         
     History:
         2022_11_01 | MEG | Written
         2023_09_28 | MEG | Update to take models named by ModelCheckpoint, and discard figure options.  
+        2023_11_16 | MEG | Determine epoch number automatically, assuing only one model was saved.  
     
     """
     import tensorflow.keras as keras
     
+    def get_best_model_path(models_dir, model_name):
+        """ When only the best model is saved but this includes the epoch number,
+        get the path to  the model.  
+        
+        Inputs:
+            model_dir | pathlib Path | directory to models.  
+            model_name | string  | start of name, assumed to be followed by _epoch_00X.h5
+        returns:
+            model_list[0] | string | path to best model
+        History:
+            2023_11_16 | MEG | Written
+        """
+        import glob
+        model_list = glob.glob(str(models_dir / f"{model_name}_epoch*.h5"))                                  # don't know what epoch number is, assume that onle one file exists
+        if (len(model_list)) == 0:
+            raise Exception(f"No models were found.  One, saved with the best metric, was expected. Exiting.  ")
+        if (len(model_list)) > 1:
+                raise Exception(f"More than 1 model was found.  One, saved with the best metric, was expected. Exiting.  ")
+        return model_list[0]
+    
     
     print(f"Loading the two models at the required epochs...", end = '')
-    # class_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_class:03d}.h5")          # load the best classification model
-    # loc_model = keras.models.load_model(models_dir / f"vgg16_2head_fc_epoch_{n_epoch_loc:03d}.h5")              # load the best localisation model
     if n_models == 2:
-        class_model = keras.models.load_model(models_dir / "best_class_model.h5")          # load the best classification model
-        loc_model = keras.models.load_model(models_dir / "best_loss_model.h5")              # load the best localisation model
+        class_model = keras.models.load_model(get_best_model_path(models_dir, "best_class"))          # load the best classification model
+        loc_model = keras.models.load_model(get_best_model_path(models_dir, "best_loc"))              # load the best localisation model
     else:
-        class_model = keras.models.load_model(models_dir / "best_model.h5")          # load the best classification model
-        loc_model = keras.models.load_model(models_dir / "best_model.h5")              # load the best localisation model
+        class_model = keras.models.load_model(get_best_model_path(models_dir, "best_model"))          # load the best classification model
+        loc_model = keras.models.load_model(get_best_model_path(models_dir, "best_model"))              # load the best localisation model
     print(f" Done.  ")
     
     #model = keras.models.clone_model(model)                                                                    # if you don't want to change the original model.  Would need to update remaining references to it though.  
