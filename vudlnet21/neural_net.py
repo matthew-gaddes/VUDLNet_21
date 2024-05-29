@@ -6,6 +6,7 @@ Created on Wed Oct 28 15:14:07 2020
 @author: matthew
 """
 
+import pdb
 import tensorflow as tf
 
 #%%
@@ -27,6 +28,7 @@ def build_2head_from_epochs(model, models_dir,  n_models = 2):
         2022_11_01 | MEG | Written
         2023_09_28 | MEG | Update to take models named by ModelCheckpoint, and discard figure options.  
         2023_11_16 | MEG | Determine epoch number automatically, assuing only one model was saved.  
+        2023_12_07 | MEG | Add ability to load weights from two models that are too large for GPU RAM by just loading the best localisation model.  
     
     """
     import tensorflow.keras as keras
@@ -51,26 +53,118 @@ def build_2head_from_epochs(model, models_dir,  n_models = 2):
                 raise Exception(f"More than 1 model was found.  One, saved with the best metric, was expected. Exiting.  ")
         return model_list[0]
     
-    
-    print(f"Loading the two models at the required epochs...", end = '')
     if n_models == 2:
+        print(f"Loading the two models at the required epochs...", end = '')
         class_model = keras.models.load_model(get_best_model_path(models_dir, "best_class"))          # load the best classification model
         loc_model = keras.models.load_model(get_best_model_path(models_dir, "best_loc"))              # load the best localisation model
+        
+        for layer in model.layers:                                                                                  # loop through all layers
+            if layer.name[:3] == 'loc':                                                                                     # if it's a localisation layer that we created..
+                model.get_layer(layer.name).set_weights(loc_model.get_layer(layer.name).get_weights())              # update the weights
+            if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
+                model.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
+    elif n_models == 1:
+        print(f"Loading the model at the required epochs...", end = '')
+        try:
+            best_model_path = get_best_model_path(models_dir, "best_model")
+        except:
+            best_model_path = get_best_model_path(models_dir, "best_loc")
+        best_model = keras.models.load_model(best_model_path)                                     # 
+        for layer in model.layers:                                                                                  # loop through all layers
+            if layer.name[:3] == 'loc':                                                                                     # if it's a localisation layer that we created..
+                model.get_layer(layer.name).set_weights(best_model.get_layer(layer.name).get_weights())              # update the weights
+            if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
+                model.get_layer(layer.name).set_weights(best_model.get_layer(layer.name).get_weights())
+                
     else:
-        class_model = keras.models.load_model(get_best_model_path(models_dir, "best_model"))          # load the best classification model
-        loc_model = keras.models.load_model(get_best_model_path(models_dir, "best_model"))              # load the best localisation model
+        raise Exception(f"n_models can either be 1 or 2, but not {n_models}.  Exiting.")
+    
     print(f" Done.  ")
-    
-    #model = keras.models.clone_model(model)                                                                    # if you don't want to change the original model.  Would need to update remaining references to it though.  
-    
-    for layer in model.layers:                                                                                  # loop through all layers
-        if layer.name[:3] == 'loc':                                                                                     # if it's a localisation layer that we created..
-            model.get_layer(layer.name).set_weights(loc_model.get_layer(layer.name).get_weights())              # update the weights
-        if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
-            model.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
-            
+
     return model
             
+
+
+#%%
+
+
+
+# def build_2head_from_epochs(model, models_dir,  n_models = 2):
+#     """
+#     The performance of each head of a two headed model may be best at different epochs for different heads.  
+#     Merge the two heads to create the optimal model.  
+    
+#     Inputs:
+#         model | keras model | model to be updated.  
+#         models_dir | pathlib Path | directory to where the model was stored after each epoch
+#     Returns:
+#         model | keras model | updated model
+        
+        
+#     History:
+#         2022_11_01 | MEG | Written
+#         2023_09_28 | MEG | Update to take models named by ModelCheckpoint, and discard figure options.  
+#         2023_11_16 | MEG | Determine epoch number automatically, assuing only one model was saved.  
+    
+#     """
+#     import tensorflow.keras as keras
+    
+#     def get_best_model_path(models_dir, model_name):
+#         """ When only the best model is saved but this includes the epoch number,
+#         get the path to  the model.  
+        
+#         Inputs:
+#             model_dir | pathlib Path | directory to models.  
+#             model_name | string  | start of name, assumed to be followed by _epoch_00X.h5
+#         returns:
+#             model_list[0] | string | path to best model
+#         History:
+#             2023_11_16 | MEG | Written
+#         """
+#         import glob
+#         model_list = glob.glob(str(models_dir / f"{model_name}_epoch*.h5"))                                  # don't know what epoch number is, assume that onle one file exists
+#         if (len(model_list)) == 0:
+#             raise Exception(f"No models were found.  One, saved with the best metric, was expected. Exiting.  ")
+#         if (len(model_list)) > 1:
+#                 raise Exception(f"More than 1 model was found.  One, saved with the best metric, was expected. Exiting.  ")
+#         return model_list[0]
+    
+#     pdb.set_trace()
+    
+#     print(f"Loading the two models at the required epochs...", end = '')
+#     if n_models == 2:
+#         class_model = keras.models.load_model(get_best_model_path(models_dir, "best_class"))          # load the best classification model
+#         loc_model = keras.models.load_model(get_best_model_path(models_dir, "best_loc"))              # load the best localisation model
+#     else:
+#         pdb.set_trace()
+#         class_model = keras.models.load_model(get_best_model_path(models_dir, "best_model"))          # load the best classification model
+#         loc_model = keras.models.load_model(get_best_model_path(models_dir, "best_model"))              # load the best localisation model
+#     print(f" Done.  ")
+    
+#     #model = keras.models.clone_model(model)                                                                    # if you don't want to change the original model.  Would need to update remaining references to it though.  
+    
+#     for layer in model.layers:                                                                                  # loop through all layers
+#         if layer.name[:3] == 'loc':                                                                                     # if it's a localisation layer that we created..
+#             model.get_layer(layer.name).set_weights(loc_model.get_layer(layer.name).get_weights())              # update the weights
+#         if layer.name[:5] == 'class':                                                                                   # same for if a classification layer...
+#             model.get_layer(layer.name).set_weights(class_model.get_layer(layer.name).get_weights())
+            
+#     return model
+            
+
+#%%
+# import gc
+# del class_model
+# tf.keras.backend.clear_session()
+# gc.collect()
+# # del class_model
+
+
+# # from tensorflow.keras import backend as K
+# K.clear_session()
+
+# del class_model
+
     
    
 
